@@ -1,0 +1,289 @@
+name: Publish signed desktop release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pi-agent-desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - runner: macos-26
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+            apple_signing_identity: "-"
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            args: --target x86_64-unknown-linux-gnu --bundles deb
+            apple_signing_identity: ""
+          # Restored after the file-tracer fix in eacaca3/7f2a1c0: a literal
+          # homedir() reaching an fs call made @vercel/nft glob the whole
+          # Windows profile at build time, which failed on its junction loops.
+          # Verified through desktop:prepare by windows-build-debug.yml before
+          # re-enabling; Tauri bundling and signing are first exercised here.
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: --target x86_64-pc-windows-msvc --bundles nsis
+            apple_signing_identity: ""
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out pi-agent-desktop
+        uses: actions/checkout@v7
+
+      - name: Require updater signing secrets
+        shell: bash
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          test -n "$UPDATER_PRIVATE_KEY"
+          test -n "$UPDATER_PUBLIC_KEY"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Configure updater public key
+        env:
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: node scripts/configure-updater-public-key.mjs
+
+      # The window controls are drawn by the AppKit the binary links, not the
+      # one it runs on: an SDK 15 build shows the legacy traffic lights even on
+      # macOS 26+, and with different button geometry (0.7.1 shipped from a
+      # macOS 15 runner that way). Fail here instead of shipping that again.
+      - name: Require the macOS 26 SDK
+        if: runner.os == 'macOS'
+        run: |
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK $sdk"
+          test "${sdk%%.*}" -ge 26
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify bundled component releases
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          npm run release:manifest
+          npm run release:verify
+
+      - name: Prepare packaged Next.js server
+        run: npm run desktop:prepare
+
+      - name: Test desktop shell
+        if: runner.os == 'Windows' || runner.os == 'Linux'
+        run: cargo test --release --manifest-path src-tauri/Cargo.toml --lib --target ${{ matrix.target }}
+
+      - name: Build, sign, and upload updater artifacts
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PI_AGENT_DESKTOP_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
+        with:
+          tagName: v__VERSION__
+          releaseName: pi-agent-desktop v__VERSION__
+          releaseBody: |
+            ## Pi Agent Desktop 0.7.5
+
+            ### New
+
+            - **Chats can do more.** A chat now uses your installed skills and MCP servers (an MCP server you configured is trusted: its tools may write files or run commands), and you can attach text, code, and Word (.docx) files to a message. Name a file by its full path and the chat can read it; ask for a file and it is saved to your Downloads folder (never overwriting; you can require a confirmation before each save in the Chats section of Settings › General). Programs and installers are never saved.
+            - Pin, group, and archive chats from the sidebar, set a default model and reasoning level for new chats, and choose which extra tools chats may use in the **Chats** section of **Settings › General**. **Continue in a project** copies a chat into a project so it gains that project's tools.
+            - **Editable follow-up queue.** Messages sent while the agent is working wait in a list above the composer: edit, delete, or send one now to steer the current run. They are delivered automatically when the run finishes.
+            - Settings and every menu, dropdown, and option picker now share one consistent look, spacing, and keyboard behavior.
+
+            ### Improved
+
+            - The window appears once its first screen is ready instead of showing an empty frame, and the app starts faster.
+            - Chat scrolling keeps your sent message in place while a reply streams.
+
+            ### Fixed
+
+            - After a Windows overwrite install, the app no longer keeps showing the previous version's interface.
+            - Files attached in one chat no longer appear in another; editing or restoring a message with attachments brings the files back as attachments.
+            - A path written inside an attached file no longer lets the chat read that file; only paths you type yourself count.
+            - The default reasoning level can be saved from the keyboard (arrow right to the star, then Enter).
+            - `dev:lan` and `start:lan` now mark the server as network-exposed, which switches off chats reading and saving files on this computer.
+
+            Bundled components: pi 1.3.0, pi-web 0.10.0.
+
+            ---
+
+            ## Pi Agent Desktop 0.7.5
+
+            ### 新增
+
+            - **对话能力增强。** 对话现在可以使用已安装的 Skills 和 MCP 服务器（你配置的 MCP 服务器被视为可信，其工具可能写入文件或执行命令），消息可附加文本、代码和 Word（.docx）文件。写出文件的完整路径，对话就能读取它；让它生成文件，会保存到“下载”文件夹（不会覆盖已有文件；可在 设置 › 通用 的“对话”部分要求每次保存前先确认）。程序和安装包不会被保存。
+            - 侧边栏可固定、分组和归档对话；在 **设置 › 通用** 的“对话”部分可设置新对话的默认模型与推理级别，并选择对话额外可用的工具。**在项目中继续**会把对话复制到项目里，使其获得该项目的工具。
+            - **可编辑的跟进队列。** 智能体工作期间发送的消息会排在输入框上方的列表中：可编辑、删除，或立即发送以引导当前运行；运行结束后自动投递。
+            - 设置页以及所有菜单、下拉框和选项选择器，统一了外观、间距和键盘操作。
+
+            ### 改进
+
+            - 窗口在首屏就绪后才显示，不再先出现空白画面，应用启动也更快。
+            - 对话滚动在回复流式输出时，会让你刚发送的消息保持在原位。
+
+            ### 修复
+
+            - Windows 覆盖安装后，应用不再继续显示上一版本的界面。
+            - 在一个对话中添加的附件不会再出现在另一个对话里；编辑或恢复带附件的消息时，文件会作为附件回到输入框。
+            - 附件内容中写出的路径不再让对话获得读取该文件的权限，只有你自己输入的路径才算数。
+            - 默认推理级别现在可以用键盘保存（方向键右移到星标，再按 Enter）。
+            - `dev:lan` 与 `start:lan` 现在会把服务标记为对外开放，从而关闭对话读取和保存本机文件的能力。
+
+            内置组件版本：pi 1.3.0、pi-web 0.10.0。
+          releaseDraft: true
+          prerelease: false
+          uploadUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  manifest:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pi-agent-desktop
+        uses: actions/checkout@v7
+
+      - name: Upload component manifest to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          gh release upload "v$version" src-tauri/resources/component-versions.json --clobber
+          # A prerelease is never served by the updater. Say so explicitly
+          # instead of relying on the value tauri-action used when it first
+          # created the draft (v0.7.3 ended up marked prerelease).
+          gh release edit "v$version" --draft=false --latest --prerelease=false
+
+  # A partially failed matrix leaves the release a draft and skips `manifest`,
+  # which is correct — but it was also completely silent. Four consecutive
+  # v0.1.3 builds failed on Windows without anyone noticing, and the release was
+  # published by hand with macOS artifacts only and no component manifest.
+  notify:
+    needs: [build, manifest]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # This repository currently has Issues disabled, so an issue-only alert
+      # silently fails and reports nothing — which is how four consecutive
+      # failed releases went unnoticed. The job summary always works; the issue
+      # is attempted on top and starts working by itself if Issues are enabled.
+      - name: Report the failed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Signed release build failed"
+            echo
+            echo "[Run log]($RUN_URL)"
+            echo
+            echo "The release for this version stays a **draft** and has no"
+            echo "\`component-versions.json\`: the manifest job only runs when every"
+            echo "platform in the build matrix succeeds."
+            echo
+            echo "**Do not publish it by hand.** A release missing a platform's installer"
+            echo "or its component manifest will not serve updates to that platform —"
+            echo "that is exactly how v0.1.3 shipped macOS-only."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          issues_enabled="$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues 2>/dev/null || echo false)"
+          if [ "$issues_enabled" != "true" ]; then
+            echo "Issues are disabled for $GITHUB_REPOSITORY; reported in the job summary only."
+            echo "Enable Issues to also get a persistent, notifying alert." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --state open --label release-failure --limit 1 --json number --jq '.[0].number // empty')"
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" \
+              --body "Release build failed again: $RUN_URL"
+          else
+            gh label create release-failure --repo "$GITHUB_REPOSITORY" \
+              --color B60205 --description "Signed desktop release build needs attention" 2>/dev/null || true
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Signed release build failed" \
+              --label release-failure \
+              --body "The signed desktop release build failed: $RUN_URL
+
+          The release for this version stays a DRAFT and has no component-versions.json,
+          because the manifest job only runs when every platform in the build matrix
+          succeeds. Do not publish it by hand — a release missing a platform's installer
+          or its component manifest will not serve updates to that platform.
+
+          This issue is reused for subsequent failures; close it once a release is green."
+          fi
+
+  # Keeps Casks/pi-agent.rb (the Homebrew tap: `brew tap abcwyc/pi-agent-desktop
+  # https://github.com/abcwyc/pi-agent-desktop`) on the release that was just
+  # published. Runs only after `manifest` has published it, so a draft or partly
+  # failed release never reaches Homebrew users. Placed after `notify` because
+  # release-workflows.test.mjs slices the manifest job up to `notify:`.
+  homebrew:
+    needs: manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pi-agent-desktop
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Point the cask at the published DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          digest="$(gh release view "v$version" --json assets \
+            --jq '.assets[] | select(.name | endswith("_aarch64.dmg")) | .digest')"
+          if [ -z "$digest" ]; then
+            echo "No aarch64 DMG digest on release v$version" >&2
+            exit 1
+          fi
+          node scripts/update-homebrew-cask.mjs "$version" "$digest"
+          if git diff --quiet -- Casks; then
+            echo "Cask already at $version"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/pi-agent.rb
+          git commit -m "chore(homebrew): update cask to $version"
+          git push origin HEAD:main

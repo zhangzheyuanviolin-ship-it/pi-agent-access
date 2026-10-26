@@ -1,0 +1,6 @@
+"use client";
+import {useEffect,useState} from 'react';
+export function PermissionsConfig(){const [mode,setMode]=useState('');const [error,setError]=useState('');const [busy,setBusy]=useState(false);useEffect(()=>{void fetch('/api/permissions').then(r=>r.json()).then(d=>setMode(d.mode)).catch(()=>setError('读取权限失败'));},[]);
+ async function save(value:string){setBusy(true);setError('');try{const r=await fetch('/api/permissions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:value})});const d=await r.json();if(!r.ok)throw new Error(d.error);setMode(d.mode);}catch(e){setError(String(e));}finally{setBusy(false);}}
+ return <section aria-label="权限"><h2>权限</h2><p role="alert">{error}</p><fieldset disabled={busy||!mode}><legend>模型工具权限</legend>{[['readonly','只读','禁止修改、安装、命令和外部模型调用。'],['ask','询问批准','读取直接执行，修改与执行先询问。'],['full','完全访问','常规工具不询问，高风险设置仍确认。']].map(([value,label,help])=><label className="a11y-tool-row" key={value}><input type="radio" name="permission-mode" checked={mode===value} onChange={()=>void save(value)}/>{label}<span>，{help}</span></label>)}</fieldset><p>能力开关决定可用工具，权限决定执行前是否批准。此设置只能由您调整。</p><details><summary>权限范围</summary><p>这是应用内工具审批，不是系统沙箱。终端和已安装插件可执行本机代码；macOS自身授权仍然有效。旧版本升级默认保留完全访问。</p></details><p role="status">{busy?'正在保存':mode?'权限设置已生效':''}</p></section>;
+}

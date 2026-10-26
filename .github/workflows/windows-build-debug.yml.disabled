@@ -1,0 +1,116 @@
+name: Debug the Windows desktop build
+
+# Manual only, and deliberately not part of any release path: it produces no
+# artifacts, creates no release, and signs nothing.
+#
+# ROOT CAUSE (found 2026-07-26, runs 30203907309 and 30204652244):
+#
+#   app/api/default-cwd/route.ts does
+#       const dir = join(homedir(), `pi-cwd-${date}`);
+#       mkdirSync(dir, { recursive: true });
+#
+#   Next's file tracer (@vercel/nft) statically analyses that fs call. It can
+#   evaluate homedir(), but the template literal is dynamic, so it turns the
+#   path into a glob and enumerates the base. The two patterns it issued were:
+#
+#       C:\Users\runneradmin\pi-cwd-*
+#       C:\Users\runneradmin/**/*        <- note the mixed separators
+#
+#   The second walks the entire user profile, which on a Windows runner is full
+#   of legacy junctions (Application Data -> AppData\Roaming, Local Settings ->
+#   AppData\Local, Cookies, ...) plus WindowsApps reparse points. Enumerating
+#   them returns EPERM/EACCES and fails the build.
+#
+#   The same build on macOS reports ZERO scans outside the checkout, so this is
+#   Windows-specific rather than a latent problem everywhere.
+#
+#   This also explains why 576181f did not help: outputFileTracingRoot bounds
+#   where traced output is rooted, not where nft follows an analysed path.
+#
+# Delete this workflow once the Windows leg is restored in release.yml.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    steps:
+      - name: Check out pi-agent-desktop
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Describe the environment
+        shell: bash
+        run: |
+          echo "cwd:        $(pwd)"
+          echo "node:       $(node --version)"
+          echo "HOME:       ${HOME:-unset}"
+          echo "USERPROFILE:${USERPROFILE:-unset}"
+          echo "homedir:    $(node -p 'require("node:os").homedir()')"
+          echo "tmpdir:     $(node -p 'require("node:os").tmpdir()')"
+
+      - name: Show what next.config resolves to
+        shell: bash
+        run: |
+          # outputFileTracingRoot was pinned to __dirname in 576181f; confirm it
+          # actually resolves on Windows rather than silently becoming undefined.
+          node -e "
+            const { createJiti } = require('jiti');
+            const jiti = createJiti(process.cwd() + '/');
+            const config = jiti('./next.config.ts').default ?? jiti('./next.config.ts');
+            console.log(JSON.stringify({
+              outputFileTracingRoot: config.outputFileTracingRoot,
+              distDir: config.distDir,
+              output: config.output,
+              serverExternalPackages: config.serverExternalPackages,
+            }, null, 2));
+          "
+        env:
+          PI_WEB_DESKTOP_BUILD: "1"
+
+      # desktop:prepare rather than a bare `next build`: it runs the same build
+      # and then exercises the Windows-only half of prepare-desktop.mjs — the
+      # node.exe copy and the npm lookup — which a plain build never touches.
+      # Still no Tauri, no signing, no release.
+      - name: Stage the desktop server with a stray-scan tracer attached
+        shell: bash
+        continue-on-error: true
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NODE_OPTIONS: "--require ./scripts/trace-stray-scandir.cjs --stack-trace-limit=60"
+        run: npm run desktop:prepare
+
+      - name: Show what got staged
+        shell: bash
+        continue-on-error: true
+        run: |
+          echo "--- server entry ---"
+          ls -la src-tauri/resources/server/server.js src-tauri/resources/server/desktop-server.cjs
+          echo "--- bundled node runtime ---"
+          ls -la src-tauri/resources/node/
+          "./src-tauri/resources/node/node.exe" --version
+          echo "--- bundled pi packages ---"
+          for d in src-tauri/resources/server/node_modules/@earendil-works/*/dist; do
+            echo "$d: $(ls "$d" | wc -l) entries"
+          done
+
+      - name: Look for junction loops in the profile
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          Get-ChildItem -Force "$env:USERPROFILE" |
+            Where-Object { $_.LinkType } |
+            Select-Object Name, LinkType, Target |
+            Format-Table -AutoSize

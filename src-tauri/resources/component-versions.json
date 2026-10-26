@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "1.0.0",
+  "components": [
+    {
+      "id": "pi-agent-desktop",
+      "repository": "zhangzheyuanviolin-ship-it/pi-agent-access",
+      "version": "1.0.0"
+    },
+    {
+      "id": "pi",
+      "repository": "earendil-works/pi",
+      "version": "1.3.0"
+    },
+    {
+      "id": "pi-web",
+      "repository": "agegr/pi-web",
+      "version": "0.10.0"
+    }
+  ]
+}

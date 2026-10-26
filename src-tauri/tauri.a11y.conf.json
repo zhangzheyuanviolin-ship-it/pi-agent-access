@@ -1,0 +1,16 @@
+{
+  "productName": "Pi Agent 无障碍测试版1",
+  "identifier": "com.zhangzheyuan.pi-agent.a11y1",
+  "bundle": {
+    "targets": [
+      "app"
+    ],
+    "createUpdaterArtifacts": false,
+    "shortDescription": "中文无障碍交互测试版"
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": []
+    }
+  }
+}

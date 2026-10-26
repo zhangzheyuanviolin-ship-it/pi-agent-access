@@ -1,0 +1,74 @@
+[[permission]]
+identifier = "allow-open-external-url"
+description = "Allows opening http/https/mailto URLs in the system default handler."
+commands.allow = ["open_external_url"]
+
+[[permission]]
+identifier = "allow-open-path"
+description = "Allows opening a local filesystem path with the OS default application."
+commands.allow = ["open_path"]
+
+[[permission]]
+identifier = "allow-open-log-dir"
+description = "Allows opening the app log directory in the OS file manager."
+commands.allow = ["open_log_dir"]
+
+[[permission]]
+identifier = "allow-reveal-item-in-dir"
+description = "Allows revealing a local filesystem path in the OS file manager."
+commands.allow = ["reveal_item_in_dir"]
+
+[[permission]]
+identifier = "allow-list-apps-for-file"
+description = "Allows listing the applications that can open a local file (macOS Open With)."
+commands.allow = ["list_apps_for_file"]
+
+[[permission]]
+identifier = "allow-open-path-with"
+description = "Allows opening a local file with a chosen application bundle (macOS Open With)."
+commands.allow = ["open_path_with"]
+
+[[permission]]
+identifier = "allow-set-close-quits"
+description = "Allows the UI to choose whether closing the window quits or hides."
+commands.allow = ["set_close_quits"]
+
+[[permission]]
+identifier = "allow-quit-app"
+description = "Allows the UI to quit the desktop application."
+commands.allow = ["quit_app"]
+
+[[permission]]
+identifier = "allow-show-main-window-cmd"
+description = "Allows the UI to show and focus the main window."
+commands.allow = ["show_main_window_cmd"]
+
+[[permission]]
+identifier = "allow-app-ready"
+description = "Allows the UI to report that its first screen is ready, which shows the hidden main window."
+commands.allow = ["app_ready"]
+
+[[permission]]
+identifier = "allow-window-painted"
+description = "Allows the UI to report that it painted after the window came back from hidden."
+commands.allow = ["window_painted"]
+
+[[permission]]
+identifier = "allow-set-ui-theme"
+description = "Allows the UI to persist light/dark theme for the next cold start."
+commands.allow = ["set_ui_theme"]
+
+[[permission]]
+identifier = "allow-get-desktop-api-token"
+description = "Allows the trusted desktop WebView to authorize native-dialog filesystem requests."
+commands.allow = ["get_desktop_api_token"]
+
+[[permission]]
+identifier = "allow-show-popup-menu"
+description = "Allows the UI to show a native popup menu described as plain data and learn which item was picked."
+commands.allow = ["show_popup_menu"]
+
+[[permission]]
+identifier = "allow-clear-app-cache"
+description = "Allows the UI to clear the webview's disk caches and learn how many bytes were freed."
+commands.allow = ["clear_app_cache"]

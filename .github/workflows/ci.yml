@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  # demo/ keeps copies of components/, hooks/ and lib/ and is only built by the
+  # manual Demo workflow, so report when those copies fall behind. Never fails:
+  # the fix is a sync (demo/README.md), not a blocker for the change itself.
+  demo-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The sync merges demo patches against the commit in demo/sync-base.json.
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+      - name: Report demo drift
+        run: |
+          if ! node demo/scripts/sync-from-app.mjs --check > demo-drift.txt; then
+            echo "::warning title=Demo copies drifted::demo/ is behind the main tree. Run node demo/scripts/sync-from-app.mjs (see demo/README.md)."
+          fi
+          cat demo-drift.txt
+          { echo '### demo/ drift'; echo '```'; cat demo-drift.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  # The desktop shell (src-tauri) is otherwise only compiled by the release
+  # workflow, so a Rust error would surface at publish time.
+  desktop-shell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Install Linux desktop dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            librsvg2-dev
+      # tauri-build refuses to run when a bundled resource path is missing.
+      # These are the generated, gitignored outputs of `npm run desktop:prepare`;
+      # empty placeholders are enough to compile and unit-test the shell. The
+      # list is read from tauri.linux.conf.json, whose `bundle.resources`
+      # replaces the base config's macOS list; tracked files are left alone.
+      - name: Create placeholder bundle resources
+        run: |
+          node -e "
+          const fs = require('fs');
+          for (const r of require('./src-tauri/tauri.linux.conf.json').bundle.resources) {
+            const p = 'src-tauri/' + r;
+            if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+          }"
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+  # Windows-only code (cfg(windows) blocks, the tray, taskkill/explorer paths)
+  # is invisible to the Linux job and to macOS; without this job the release
+  # run is the first to compile it, ~25 minutes in. 0.7.0's first attempt died
+  # there on one missing import.
+  desktop-shell-windows:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # Same placeholders as the Linux job, from the Windows resource list
+      # (tauri.windows.conf.json replaces the base config's macOS list).
+      - name: Create placeholder bundle resources
+        shell: bash
+        run: |
+          node -e "
+          const fs = require('fs');
+          for (const r of require('./src-tauri/tauri.windows.conf.json').bundle.resources) {
+            const p = 'src-tauri/' + r;
+            if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
+          }"
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml --lib
+      - run: cargo clippy --locked --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+      # Advisory only: a high-severity finding may sit in a transitive
+      # dependency that only an upstream release can fix. Read the log, do not
+      # gate merges on it.
+      - run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e
+        env:
+          E2E_SERVER_MODE: start
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: e2e-failure
+          path: test-results/e2e/
+          retention-days: 7
