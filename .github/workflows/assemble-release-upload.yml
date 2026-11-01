@@ -30,7 +30,7 @@ jobs:
               a=assets[n]
               assert a['state']=='uploaded'
               with Path('parts',n).open('wb') as f:
-                  subprocess.run(['gh','api',a['url'],'-H','Accept: application/octet-stream'],stdout=f,check=True)
+                  subprocess.run(['gh','api',a['url'],'-H','Accept: application/octet-stream','--allow-escape-sequences'],stdout=f,check=True)
           PY
           cat parts/installer-block-*.part > Pi-Agent-Access-1.1.0-macos-arm64.dmg
           test "$(stat -c %s Pi-Agent-Access-1.1.0-macos-arm64.dmg)" = 150140326
