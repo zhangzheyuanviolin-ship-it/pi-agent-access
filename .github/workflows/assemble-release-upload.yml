@@ -1,0 +1,38 @@
+name: Assemble verified release upload
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: assemble-v1.1.0
+  cancel-in-progress: false
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Download and verify installer parts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir parts
+          gh api "repos/$GH_REPO/releases/430735076" > release.json
+          python3 - <<'PY'
+          import json,subprocess
+          from pathlib import Path
+          d=json.loads(Path('release.json').read_text())
+          assert d['tag_name']=='v1.1.0' and d['draft']
+          assets={a['name']:a for a in d['assets']}
+          for i in range(18):
+              n=f'installer-transfer-{i:03d}.part'
+              a=assets[n]
+              assert a['state']=='uploaded'
+              with Path('parts',n).open('wb') as f:
+                  subprocess.run(['gh','api',a['url'],'-H','Accept: application/octet-stream'],stdout=f,check=True)
+          PY
+          cat parts/installer-transfer-*.part > Pi-Agent-Access-1.1.0-macos-arm64.dmg
+          test "$(stat -c %s Pi-Agent-Access-1.1.0-macos-arm64.dmg)" = 150140326
+          echo '8db85f408f722e037c77fbaa9e73edc17b111cb33759256c3631c72c81c7773e  Pi-Agent-Access-1.1.0-macos-arm64.dmg' | sha256sum --check
+          gh release upload v1.1.0 Pi-Agent-Access-1.1.0-macos-arm64.dmg --clobber
