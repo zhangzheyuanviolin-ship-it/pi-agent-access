@@ -1,3 +1,4 @@
+import { fetchWithDeadline } from "../fetch-timeout";
 import type { ScheduledRun, ScheduledTaskView } from "./types";
 
 /** Browser-side wrappers for /api/scheduled-tasks. Import nothing server-only here. */
@@ -19,7 +20,7 @@ export class ScheduledApiError extends Error {
 const BASE = "/api/scheduled-tasks";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+  const response = await fetchWithDeadline(`${BASE}${path}`, 10000, {
     cache: "no-store",
     ...init,
     headers: init?.body ? { "Content-Type": "application/json", ...init.headers } : init?.headers,

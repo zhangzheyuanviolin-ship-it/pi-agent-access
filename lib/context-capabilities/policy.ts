@@ -13,7 +13,7 @@ export interface PolicyRecord {pluginPrompt?:string;policy:ContextPolicy;prompt:
 export function readPolicyRecord(entries:readonly {type:string;customType?:string;data?:unknown}[]):PolicyRecord|undefined{
  for(let i=entries.length-1;i>=0;i--){const e=entries[i];if(e.type==='custom'&&e.customType===POLICY_ENTRY){const d=e.data as PolicyRecord;parsePolicy(d.policy);if(typeof d.prompt!=='string'||!Array.isArray(d.components))throw new Error('上下文快照损坏');return {...d,policy:parsePolicy(d.policy)};}}
 }
-export const FILE_TOOLS=new Set(['read','write','edit','bash','powershell','grep','find','ls']);
+export const FILE_TOOLS=new Set(['read','write','edit','bash','powershell','grep','find','ls','video_analyze']);
 export function allowedTool(name:string,p:ContextPolicy,sourcePath=''):boolean{
  if(name==='settings_manage')return p.enabled.admin===true;
  if(FILE_TOOLS.has(name))return p.enabled.files;

@@ -403,3 +403,10 @@ test("keeps a block that opens a raw-text tag as it renders without line breaks"
   const list = renderMarkdown("- item <textarea>\n  more\n- two\n  lines", { keepLineBreaks: true });
   assert.match(list, /<li>two<br\/>lines<\/li>/);
 });
+
+test('published task output remains a real accessible download instead of a local-file viewer link', () => {
+  const html = renderMarkdown('[验收视频](/api/outputs/01234567-89ab-4cde-8fab-0123456789ab)');
+  assert.match(html, /href="\/api\/outputs\/01234567-89ab-4cde-8fab-0123456789ab"/);
+  assert.match(html, /download=""/);
+  assert.match(html, /aria-label="验收视频，下载文件"/);
+});

@@ -1,3 +1,4 @@
+import {beginCommandHealth} from './command-health';
 import {
   createBashToolDefinition,
   createLocalBashOperations,
@@ -26,6 +27,7 @@ type ProjectCommandBashOperationsOptions = {
   localOperations?: BashOperations;
   platform?: NodeJS.Platform;
   shellPath?: string;
+  onHealth?: (text: string) => void;
 };
 
 type BashExecResult = Awaited<ReturnType<BashOperations["exec"]>>;
@@ -88,15 +90,20 @@ export function createProjectCommandBashOperations(
       );
       const { onData, signal, timeout } = executionOptions;
       let released = false;
-      const execution = localOperations.exec(command, cwd, {
+      let health: ReturnType<typeof beginCommandHealth> | undefined;
+      if (platform === 'darwin' && !options.localOperations) {
+        try { health = beginCommandHealth(environment, options.onHealth); } catch { /* Telemetry must never block a command. */ }
+      }
+      const execution = localOperations.exec(health ? health.wrap(command) : command, cwd, {
         ...executionOptions,
-        env: environment,
+        env: health?.environment ?? environment,
         // Callers finalize their output once the command is released; a
         // survivor must not append to it afterwards.
         onData: (data) => {
+          health?.data(data);
           if (!released) onData(data);
         },
-      });
+      }).then(result => { health?.finish(); return result; }, error => { health?.finish('error'); throw error; });
       // Pi rejects any other timeout before it starts the command.
       const timeoutMs = typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0
         ? timeout * 1000
@@ -113,6 +120,7 @@ export function createProjectCommandBashOperations(
       return new Promise<BashExecResult>((resolve, reject) => {
         const timers: ReturnType<typeof setTimeout>[] = [];
         const release = () => {
+          health?.finish('cancelled');
           released = true;
           for (const timer of timers) clearTimeout(timer);
           signal?.removeEventListener("abort", onAbort);
@@ -153,13 +161,16 @@ export function createProjectCommandBashExtension(options: {
       pi.registerTool({
         ...displayDefinition,
         execute(toolCallId, params, signal, onUpdate, context) {
+          let lastUpdate: Parameters<NonNullable<typeof onUpdate>>[0] | undefined;
+          const updates = (value: Parameters<NonNullable<typeof onUpdate>>[0]) => { lastUpdate = value; onUpdate?.(value); };
           const executionDefinition = createBashToolDefinition(options.cwd, {
             commandPrefix: options.settings.getShellCommandPrefix(),
             operations: createProjectCommandBashOperations({
               shellPath: options.settings.getShellPath(),
+              onHealth: text => onUpdate?.({ content: [{type: "text", text: (lastUpdate?.content ?? []).filter(c => c.type === "text").map(c => c.text).join("\n") + "\n\n" + text}], details: lastUpdate?.details }),
             }),
           });
-          return executionDefinition.execute(toolCallId, params, signal, onUpdate, context);
+          return executionDefinition.execute(toolCallId, params, signal, updates, context);
         },
       });
     },

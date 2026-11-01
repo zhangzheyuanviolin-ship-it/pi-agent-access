@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { isImeComposing } from "@/lib/ime";
+import { mergeModelOptions } from "@/lib/model-options";
 import { SelectorRow } from "./SelectorRow";
 
 export interface ModelSelectorOption {
@@ -78,19 +79,20 @@ export function ModelSelector({
   const [open, setOpen] = useState(false);
   const [providerPage,setProviderPage]=useState<string|null>(null);
   const [remote,setRemote]=useState<Record<string,ModelSelectorOption[]>>({});
+  const [localOptions, setLocalOptions] = useState<ModelSelectorOption[] | null>(null);
   const [extraProviders,setExtraProviders]=useState<string[]>([]);
   const [catalogBusy,setCatalogBusy]=useState(false);const [catalogError,setCatalogError]=useState("");
   const [importing,setImporting]=useState(false);const [pendingImport,setPendingImport]=useState<ModelSelectorOption|null>(null);
   const catalogRequest=useRef(0);
   const pageHeading=useRef<HTMLHeadingElement>(null);
-  useEffect(()=>{if(open){setProviderPage(null);setPendingImport(null);setCatalogError("");void fetch("/api/models/remote-catalog").then(r=>r.json()).then(d=>setExtraProviders(d.providers??[])).catch(()=>{});}},[open]);
+  useEffect(()=>{if(open){setProviderPage(null);setPendingImport(null);setCatalogError("");void fetch("/api/models-config", {cache:"no-store"}).then(r=>{if(!r.ok)throw Error();return r.json();}).then(d=>{const models=d.providers?.["mac-local-unified"]?.models;if(Array.isArray(models))setLocalOptions(models.map((m:{id:string;name?:string})=>({provider:"mac-local-unified",modelId:m.id,name:m.name??m.id})));}).catch(()=>{});void fetch("/api/models/remote-catalog").then(r=>r.json()).then(d=>setExtraProviders(d.providers??[])).catch(()=>{});}},[open]);
   useEffect(()=>{if(open)pageHeading.current?.focus();},[open,providerPage,pendingImport]);
   async function loadProvider(provider:string,refresh=false){const requestId=++catalogRequest.current;setProviderPage(provider);setFilter("");setCatalogBusy(true);setCatalogError("");try{const r=await fetch(`/api/models/remote-catalog?provider=${encodeURIComponent(provider)}${refresh?'&refresh=1':''}`);const d=await r.json();if(!r.ok)throw Error(d.error??"模型目录读取失败");setRemote(old=>({...old,[provider]:(d.models??[]).map((m:{id:string;name?:string})=>({provider,modelId:m.id,name:m.name??m.id}))}));if(d.notice&&requestId===catalogRequest.current)setCatalogError(d.notice);}catch(e){if(requestId===catalogRequest.current)setCatalogError(String(e));}finally{if(requestId===catalogRequest.current)setCatalogBusy(false);}}
 
   const [anchorRect, setAnchorRect] = useState<{ top: number; right: number; bottom: number; left: number; width: number } | null>(null);
   const [filter, setFilter] = useState("");
   const locked = disabled || busy;
-  const sortedOptions = useMemo(() => [...new Map([...Object.values(remote).flat(),...options].map(m=>[m.provider+"/"+m.modelId,m])).values()].sort(compareModelOptions), [options,remote]);
+  const sortedOptions = useMemo(() => mergeModelOptions(options, Object.values(remote).flat(), localOptions).sort(compareModelOptions), [options,remote,localOptions]);
   const filteredOptions = filterModelOptions(sortedOptions, filter);
   const showFilter = sortedOptions.length > MODEL_FILTER_THRESHOLD;
   const modelsByProvider: { provider: string; options: ModelSelectorOption[] }[] = [];

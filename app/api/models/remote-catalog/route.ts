@@ -5,7 +5,7 @@ import {readModelsConfig,writeModelsConfig,getModelsConfigPath} from '@/lib/mode
 import {copyFileSync,chmodSync} from 'node:fs';
 import type {DiscoveredModel} from '@/lib/model-discovery';
 export const dynamic='force-dynamic';
-function providerFingerprint(provider:Record<string,unknown>):string{return createHash('sha256').update(JSON.stringify({...provider,models:undefined})).digest('hex');}
+function providerFingerprint(provider:Record<string,unknown>):string{return createHash('sha256').update(JSON.stringify(provider)).digest('hex');}
 const catalogs=new Map<string,{models:DiscoveredModel[];at:number;fingerprint:string}>();
 /** Only explicit provider expansion/refresh contacts its configured upstream. No inference. */
 export async function GET(req:Request){

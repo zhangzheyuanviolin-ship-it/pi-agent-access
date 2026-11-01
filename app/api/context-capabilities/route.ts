@@ -1,3 +1,5 @@
+import {videoRoute} from '@/lib/video-analysis';
+import type {ThinkingLevel} from '@earendil-works/pi-agent-core';
 import {readFileSync,existsSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -37,12 +39,13 @@ export async function POST(req:Request){if(!isApiRequestAllowed(req)||!hasJsonCo
    await createCapabilityTools(record,c.cwd,()=>[]).factory({registerTool:(t:ToolDefinition)=>{own.push(t as typeof known[number]);},on:()=>()=>{}} as unknown as Parameters<ReturnType<typeof createCapabilityTools>['factory']>[0]);
    const admin=createSettingsAgentExtension(record,c.cwd);if('factory' in admin)await admin.factory({registerTool:(t:ToolDefinition)=>{own.push(t as typeof known[number]);},on:()=>()=>{}} as unknown as Parameters<ReturnType<typeof createCapabilityTools>['factory']>[0]);
    const all=new Map([...createCodingTools(c.cwd),...createReadOnlyTools(c.cwd),...known,...own].map(t=>[t.name,t]));
-   const tools=[...all.values()].filter(t=>allowedTool(t.name,policy,(t as {sourceInfo?:{path?:string}}).sourceInfo?.path??'')).map(({name,description,parameters})=>({name,description,parameters}));
+   const tools=[...all.values()].filter(t=>(t.name!=='video_analyze'||!!videoRoute(c.live?.inner.model))&&allowedTool(t.name,policy,(t as {sourceInfo?:{path?:string}}).sourceInfo?.path??'')).map(({name,description,parameters})=>({name,description,parameters}));
    const modelId=c.live?.inner.model?.id??'';return NextResponse.json({record,count:await countText(record.prompt,modelId),toolCount:await countText(tools.length?JSON.stringify(tools):'',modelId),incomplete:policy.enabled.plugins&&policy.plugins.length>0||policy.enabled.mcp});
  }
  const started=c.live??(await startRpcSession(body.sessionId,c.file!,undefined)).session;
- if(started.isChatWorkspace())throw new Error('请在项目会话中调整分类能力，普通聊天保留原有权限限制');
+
+ const previous=await started.send({type:'get_state'}) as {model?:{provider:string;id:string};thinkingLevel?:ThinkingLevel};
  started.saveContextRecord(record);const file=started.sessionFile;await started.shutdown();
- const next=await startRpcSession(body.sessionId,file,undefined);if(body.saveDefault===true)writeDefaultPolicy(policy);
+ const next=await startRpcSession(body.sessionId,file,undefined,{...(previous.model?{initialModel:{provider:previous.model.provider,modelId:previous.model.id}}:{}),...(previous.thinkingLevel?{thinkingLevel:previous.thinkingLevel}:{})});if(body.saveDefault===true)writeDefaultPolicy(policy);
  return NextResponse.json({success:true,sessionId:next.realSessionId});
  }catch(e){return NextResponse.json({error:e instanceof Error?e.message:'保存失败'},{status:400});}}

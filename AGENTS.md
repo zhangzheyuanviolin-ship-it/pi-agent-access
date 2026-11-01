@@ -272,3 +272,13 @@ changes to shared choices also run `node e2e/option-controls.mjs`.
 --accent --user-bg --tool-bg
 --font-mono
 ```
+
+## Local model prefix-cache release gate
+
+Ordinary user turns and attachment delivery must preserve the existing provider request prefix. Never regenerate dates, reorder old messages, or rebuild the leading system/tool sections to announce an upload. Persist each completed file's stable absolute path, name and size; append its notice to the next new user message exactly once, after upload completion. Failed uploads must never be announced as complete. Explicit user policy/model/history changes may invalidate cache and must be disclosed.
+
+For changes to prompt construction, attachments, memory, tools, or serialization, run the managed-prefix tests and attachment tests before delivery. Check a real local backend's cacheRead and newly processed input on a completed-task/new-instruction sequence when runtime behavior changes. Do not substitute full-request hashes, UI token estimates, or HTTP keepalive timings for measured prefix-cache hits or TTFT. Preserve old histories and settings during these checks.
+
+## Emergency continuation checkpoints
+
+Before each stage-completion report to Zhang Laoshi, append the actual completed work, evidence, unresolved items and exact next step using `/Users/zhangzheyuan/Projects/Accessible-Agent/continuity/update_checkpoint.py` (text on stdin). The canonical recovery entrypoint is `/Users/zhangzheyuan/Projects/Accessible-Agent/当前完整交接.txt`; read its latest `continuity/阶段进展追加记录.txt` after an interrupted conversation. Verify current processes after a reboot rather than reusing historical PIDs. Never include credentials or raw chat bodies in handoffs.

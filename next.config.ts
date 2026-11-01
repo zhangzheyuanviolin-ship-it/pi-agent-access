@@ -18,10 +18,12 @@ const nextConfig: NextConfig = {
   // home paths must still use userHome(): NFT's outside-root check can miss
   // Windows paths on another drive and enumerate the user's profile.
   ...(isDesktopBuild
-    ? { output: "standalone" as const, distDir: ".next-desktop" }
+    ? { output: "standalone" as const, distDir: process.env.PI_WEB_BUILD_DIR || ".next-desktop" }
     : {}),
   outputFileTracingRoot: configDir,
   experimental: {
+    // Shared desktop requests may wait for long local prefills or stream large files.
+    proxyTimeout: 3_600_000,
     ...(isDesktopBuild
       ? { webpackBuildWorker: true, webpackMemoryOptimizations: true, isrFlushToDisk: false }
       : {}),

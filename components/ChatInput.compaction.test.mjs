@@ -34,15 +34,17 @@ test("auto-compaction mid-run stays visible with a stop control", () => {
   assert.match(html, /title="Stop compaction"/);
 });
 
-test("manual compact is offered from the session menu when idle and hidden while merely streaming", () => {
+test("manual compact is offered directly when idle and disabled while streaming", () => {
   // The menu content is not in static markup (closed), so the gear that opens
   // it stands for the offer: with no automation values yet, only compaction
   // can be what puts it there.
   const idle = render({ isStreaming: false });
   assert.match(idle, /aria-label="Session automation"/);
+  assert.match(idle, /aria-label="Compact context"/);
   assert.doesNotMatch(idle, /Compacting…/);
 
   const streaming = render({ isStreaming: true, isCompacting: false });
   assert.doesNotMatch(streaming, /aria-label="Session automation"/);
+  assert.match(streaming, /disabled=""[^>]*aria-label="Compact context"/);
   assert.doesNotMatch(streaming, /Compacting…/);
 });

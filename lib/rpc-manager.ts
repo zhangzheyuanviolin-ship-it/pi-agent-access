@@ -1,3 +1,4 @@
+import {pendingAttachments,attachmentNotice,videoAttachmentNotice,NOTIFIED_ATTACHMENTS,DELIVERY_NOTIFIED,DELIVERY_GUIDE,needsDeliveryGuide} from './received-attachments';
 import {createPermissionGuardExtension} from './settings-agent/permissions';
 import {createSettingsAgentExtension} from './settings-agent/extension';
 import {readDefaultPolicy} from './context-capabilities/store';
@@ -9,7 +10,7 @@ import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
 import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
-import { resolve } from "path";
+import { resolve, join } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
@@ -980,7 +981,10 @@ export class AgentSessionWrapper {
           }
           let prompt: Promise<void>;
           try {
-            prompt = this.inner.prompt(command.message as string, {
+            const slash=(command.message as string).trimStart().startsWith('/');
+            const received=slash?[]:pendingAttachments(this.inner.sessionManager.getEntries());
+            const deliveryGuide=existsSync(join(getAgentDir(),'bin','pi-file')) && !slash && this.inner.getActiveToolNames().includes('bash') && needsDeliveryGuide(this.inner.sessionManager.getEntries());
+            prompt = this.inner.prompt((command.message as string)+attachmentNotice(received)+videoAttachmentNotice(received)+(deliveryGuide?DELIVERY_GUIDE:''), {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",
@@ -988,7 +992,7 @@ export class AgentSessionWrapper {
               // validation and extension preflight have accepted the submission.
               // Every disposition (handled, queued, started) is an acceptance; a
               // rejected prompt never calls this and rejects `prompt` instead.
-              preflightResult: () => acceptPreflight(),
+              preflightResult: () => {if(deliveryGuide)this.inner.sessionManager.appendCustomEntry(DELIVERY_NOTIFIED,{version:1});if(received.length)this.inner.sessionManager.appendCustomEntry(NOTIFIED_ATTACHMENTS,{ids:received.map(x=>x.id)});acceptPreflight();},
             });
           } catch (error) {
             finishPrompt();
@@ -2591,12 +2595,12 @@ export async function startRpcSession(
   }
   const sessionCwd = sessionManager.getCwd();
   let managedRecord = readPolicyRecord(sessionManager.getEntries()) as (PolicyRecord & {pluginPrompt?:string})|undefined;
-  if (!managedRecord && !sessionFile && !isChatWorkspacePath(sessionCwd)) {
+  if (!managedRecord && !sessionFile) {
     const policy=readDefaultPolicy();
     if(policy){managedRecord=await buildPolicyRecord(sessionCwd,policy);sessionManager.appendCustomEntry(POLICY_ENTRY,structuredClone(managedRecord));}
   }
 
-  const chatWorkspace = isChatWorkspacePath(sessionCwd);
+  const chatWorkspace = isChatWorkspacePath(sessionCwd) && !managedRecord;
   const subagentResources = sessionFile && !chatWorkspace
     ? readSubagentSessionResources(
         sessionManager.getEntries() as unknown as SessionEntry[],
@@ -2692,7 +2696,7 @@ export async function startRpcSession(
         systemPrompt:managedRecord.prompt||' ',systemPromptOverride:()=>managedRecord!.prompt||' ',
         appendSystemPrompt:[' '],appendSystemPromptOverride:()=>[],
         skillsOverride:base=>({...base,skills:base.skills.filter(s=>!s.disableModelInvocation&&!managedRecord!.policy.disabledSkills.includes(s.filePath))}),
-        extensionFactories:[createPermissionGuardExtension(),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??'')],
+        extensionFactories:[createPermissionGuardExtension(),createProjectCommandBashExtension({cwd:sessionCwd,settings:settingsManager}),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??'')],
       } : subagentResources
         ? {
             noExtensions: !subagentResources.loadExtensions,

@@ -1,4 +1,5 @@
 "use client";
+import {uploadSessionFiles} from '@/lib/session-transfer-client';
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -26,8 +27,7 @@ import { useDragDrop } from "@/hooks/useDragDrop";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import { useArtifactPublisher } from "@/hooks/useArtifactPublisher";
 import type { SessionStatsInfo } from "@/lib/pi-types";
-import { importDroppedProjectFiles, partitionChatDroppedFiles } from "@/lib/chat-file-drop";
-import { formatAttachmentSize } from "@/lib/chat-attachments";
+import { partitionChatDroppedFiles } from "@/lib/chat-file-drop";
 import type { ToolEntry } from "@/lib/tool-presets";
 import type { SettingsSection } from "@/lib/settings-navigation";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
@@ -796,39 +796,23 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   }, [ctxKey, onContextUsageChange]);
   useEffect(() => () => { onContextUsageChange?.(null); }, [onContextUsageChange]);
 
-  const cwd = chatOnly ? undefined : session?.cwd ?? newSessionCwd;
   const openFile = chatOnly ? undefined : onOpenFile;
   const projectImportBusyRef = useRef(false);
+  const [fileUploadBusy,setFileUploadBusy]=useState(false);
+  const [fileUploadStatus,setFileUploadStatus]=useState('');
 
   // Documents/other files are copied into the project root and @mentioned so
   // the agent can read them with its normal tools — not inlined into the prompt.
   const importProjectFiles = useCallback((projectFiles: File[]) => {
     if (projectFiles.length === 0) return;
-    if (chatOnly) {
-      // A chat has no project to copy into: text files ride inside the message.
-      void (async () => {
-        const rejected = await chatInputRef?.current?.addTextFiles(projectFiles) ?? [];
-        if (rejected.length === 0) return;
-        const detail = rejected.slice(0, 3).map((item) => {
-          const limit = item.reason === "too-many"
-            ? String(item.limit)
-            : "limit" in item ? formatAttachmentSize(item.limit) : "";
-          return `${item.name}: ${t(`chat.attachReason.${item.reason}`, { limit })}`;
-        }).join("; ");
-        addNotice({ type: "error", message: t("chat.attachRejected", { detail }) });
-      })();
-      return;
-    }
-    if (!cwd) {
-      addNotice({ type: "error", message: t("chat.dropNeedsProject") });
-      return;
-    }
     if (projectImportBusyRef.current) return;
-    projectImportBusyRef.current = true;
+    projectImportBusyRef.current = true;setFileUploadBusy(true);setFileUploadStatus('正在准备附件上传');
 
     void (async () => {
       try {
-        const result = await importDroppedProjectFiles(cwd, projectFiles);
+        const setup=await getToolSetup();if(!setup.sessionId)throw new Error('无法建立附件会话');
+        const uploaded=await uploadSessionFiles(setup.sessionId,projectFiles,(name,percent)=>setFileUploadStatus(`正在上传 ${name}，${percent}%`));
+        const result={mentionText:'',uploaded:uploaded.map(x=>x.name),skipped:[],errors:[] as {name:string;error:string}[],rejected:[] as {name:string;reason:string}[]};
         if (result.mentionText) {
           chatInputRef?.current?.insertText(result.mentionText);
           chatInputRef?.current?.focus();
@@ -858,19 +842,19 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
           message: error instanceof Error ? error.message : String(error),
         });
       } finally {
-        projectImportBusyRef.current = false;
+        projectImportBusyRef.current = false;setFileUploadBusy(false);setFileUploadStatus('');
       }
     })();
-  }, [addNotice, chatInputRef, chatOnly, cwd, onProjectFilesImported, t]);
+  }, [addNotice, chatInputRef, getToolSetup, onProjectFilesImported, t]);
 
   const onDrop = useCallback((files: File[]) => {
-    const { images, projectFiles } = partitionChatDroppedFiles(files);
+    const { images } = partitionChatDroppedFiles(files);
 
     // Images stay on the multimodal attachment path (blocked while the agent is busy).
     if (images.length > 0 && !sessionBusy) {
       chatInputRef?.current?.addImages(images);
     }
-    importProjectFiles(projectFiles);
+    importProjectFiles(files);
   }, [chatInputRef, importProjectFiles, sessionBusy]);
 
   // The composer's "+" picker. The desktop WebView's file panel ignores the
@@ -878,9 +862,9 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
   // instead of letting non-images vanish on the image-only path. Images may be
   // attached while a run is going, as before (they are sent with the next prompt).
   const onAttachFiles = useCallback((files: File[]) => {
-    const { images, projectFiles } = partitionChatDroppedFiles(files);
+    const { images } = partitionChatDroppedFiles(files);
     if (images.length > 0) chatInputRef?.current?.addImages(images);
-    importProjectFiles(projectFiles);
+    importProjectFiles(files);
   }, [chatInputRef, importProjectFiles]);
 
   const { isDragOver, handleDragEnter, handleDragOver, handleDragLeave, handleDrop } = useDragDrop(onDrop);
@@ -1139,6 +1123,8 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       ref={chatInputRef}
       onSend={handleSend}
       onAttachFiles={onAttachFiles}
+      fileUploadBusy={fileUploadBusy}
+      fileUploadStatus={fileUploadStatus} onOpenSessionFiles={() => { void getToolSetup().then(setup => { if(setup.sessionId) window.location.assign(new URL("/session-files?session="+encodeURIComponent(setup.sessionId),window.location.origin)); }).catch(error => addNotice({type:"error",message:String(error)})); }}
       onAbort={handleAbort}
       onSteer={agentRunning ? handleSteer : undefined}
       onFollowUp={agentRunning ? handleFollowUp : undefined}
@@ -1169,7 +1155,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
       getToolSetup={getToolSetup}
       onCustomTools={(preset,names)=>handleToolPresetChange(preset,names,true)}
       toolPreset={toolPreset}
-      onToolPresetChange={!chatOnly && (session || isNew) ? handleToolPresetChange : undefined}
+      onToolPresetChange={session || isNew ? handleToolPresetChange : undefined}
       thinkingLevel={thinkingLevel}
       isAutoThinkingSelection={isAutoThinkingSelection}
       onThinkingLevelChange={session || isNew ? handleThinkingLevelChange : undefined}

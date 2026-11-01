@@ -22,6 +22,8 @@ import {
   type WorktreeEntry,
 } from "./ProjectContextMenu";
 import { useProjectWorktreeActions } from "@/hooks/useProjectWorktreeActions";
+import { fetchWithRetry } from "@/lib/fetch-timeout";
+import { isRemoteHTTP } from "@/lib/remote-http";
 import { getRecentProjects } from "./path-ui";
 import { APP_PREF_KEYS, getPref, getPrefJson, removePref, setPref, setPrefJson } from "@/lib/app-prefs";
 import { groupByProject } from "@/lib/project-group";
@@ -288,6 +290,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const sessionListVersionRef = useRef<number | null>(null);
   const sessionLoadIdRef = useRef(0);
   const [loading, setLoading] = useState(true);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedCwd, setSelectedCwd] = useState<string | null>(null);
   const [homeDir, setHomeDir] = useState<string>("");
@@ -477,8 +480,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const loadId = ++sessionLoadIdRef.current;
     try {
       if (showLoading) setLoading(true);
-      const res = await fetch(sessionListUrl(summary, force), {
-        cache: "no-store",
+      const res = await fetchWithRetry(sessionListUrl(summary, force), {
+        init: { cache: "no-store" },
+        shouldRetry: () => loadId === sessionLoadIdRef.current,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json() as {
@@ -491,6 +495,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       if (loadId !== sessionLoadIdRef.current) return;
       sessionListVersionRef.current = data.sessionListVersion;
       setAllSessions(data.sessions);
+      setCatalogLoaded(true);
       setChatWorkspaceCwd(data.chatWorkspaceCwd ?? null);
       // Treat the fetched running set as an initial fallback only. Once the
       // live SSE stream is connected, a slow session-list fetch cannot overwrite it.
@@ -554,6 +559,18 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
   }, [loadSessions, refreshKey]);
 
+  useEffect(() => {
+    const recover = () => {
+      if (document.visibilityState === "visible") void loadSessions(false, false, true);
+    };
+    window.addEventListener("online", recover);
+    document.addEventListener("visibilitychange", recover);
+    return () => {
+      window.removeEventListener("online", recover);
+      document.removeEventListener("visibilitychange", recover);
+    };
+  }, [loadSessions]);
+
   // Persist unread markers so they survive a browser refresh before the user
   // has actually opened the completed session.
   useEffect(() => {
@@ -595,6 +612,40 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   }, [projectSessionPages]);
 
   useEffect(() => {
+    // Plain HTTP has no multiplexing: reserve its limited browser sockets for
+    // active chat output and uploads. Snapshot polling is read-only and pauses
+    // while hidden; it never stops an agent or changes model context.
+    if (isRemoteHTTP()) {
+      let stopped = false;
+      let busy = false;
+      const poll = async () => {
+        if (stopped || busy || document.visibilityState === "hidden") return;
+        busy = true;
+        try {
+          const response = await fetchWithRetry("/api/agent/running", {
+            init: { cache: "no-store" }, shouldRetry: () => !stopped,
+          });
+          if (!response.ok || stopped) return;
+          const data = await response.json();
+          if (stopped) return;
+          sseAuthoritativeRef.current = true;
+          setRunningSessionIds(new Set(data.runningSessionIds ?? []));
+          if (typeof data.sessionListVersion === "number"
+              && data.sessionListVersion !== sessionListVersionRef.current) await loadSessions();
+        } catch { /* next visible poll retries without discarding the list */ }
+        finally { busy = false; }
+      };
+      const wake = () => { void poll(); };
+      const timer = setInterval(wake, 4000);
+      document.addEventListener("visibilitychange", wake);
+      window.addEventListener("online", wake);
+      wake();
+      return () => {
+        stopped = true; clearInterval(timer);
+        document.removeEventListener("visibilitychange", wake);
+        window.removeEventListener("online", wake);
+      };
+    }
     // Live running status via SSE — no polling. The server pushes the current
     // set of running session ids whenever any session starts/stops working.
     let source: EventSource | null = null;
@@ -943,7 +994,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const recentProjects = getRecentProjects(allSessions);
   // Auto-select cwd and restore session from URL on first load
   useEffect(() => {
-    if (loading || skipInitialProjectSelection) return;
+    if (loading || !catalogLoaded || skipInitialProjectSelection) return;
 
     if (selectedCwd === null) {
       // If restoring a session, set cwd to match that session
@@ -962,7 +1013,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       if (projects.length > 0) setSelectedCwd(projects[0]);
       else if (chatWorkspaceCwd) setSelectedCwd(chatWorkspaceCwd);
     }
-  }, [allSessions, chatWorkspaceCwd, loading, selectedCwd, initialSessionId, skipInitialProjectSelection, onSelectSession, onInitialRestoreDone, recentProjects]);
+  }, [allSessions, chatWorkspaceCwd, loading, catalogLoaded, selectedCwd, initialSessionId, skipInitialProjectSelection, onSelectSession, onInitialRestoreDone, recentProjects]);
 
   // The worktree behind the active project's branch subtitle; falls back to
   // the main worktree while worktreeState catches up with a new selection.

@@ -5,6 +5,19 @@ const fs = require("node:fs");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require("node:path");
 
+// Desktop API requests share the existing user-session service. This only reads
+// a private local configuration; it neither starts nor stops any service.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const sharedConfigPath = path.join(require("node:os").homedir(), ".pi", "agent", "shared-backend.json");
+if (fs.existsSync(sharedConfigPath)) {
+  const config = JSON.parse(fs.readFileSync(sharedConfigPath, "utf8"));
+  if (config.url !== "http://127.0.0.1:30143") throw new Error("Invalid shared backend address");
+  const password = fs.readFileSync(config.passwordFile, "utf8").trim();
+  if (!password) throw new Error("Shared backend credential unavailable");
+  process.env.PI_WEB_SHARED_BACKEND_URL = config.url;
+  process.env.PI_WEB_SHARED_BACKEND_PASSWORD = password;
+}
+
 // An independent profile keeps official Pi and this distribution's data separate.
 // Missing ChatGPT disables only Computer Use; ordinary chat still starts.
 const accessBootstrap = path.join(__dirname, 'access-distribution/bootstrap.cjs');

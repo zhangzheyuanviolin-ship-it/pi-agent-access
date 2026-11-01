@@ -16,14 +16,14 @@ test("the desktop composer picker routes all picked files through ChatWindow", (
   assert.match(chatWindowSource, /<ChatInput[\s\S]*?onAttachFiles=\{onAttachFiles\}/);
 });
 
-test("plus picks split images from project imports in ChatWindow", () => {
+test("picked images remain visible and all originals use the unified transfer path", () => {
   const source = chatWindowSource.slice(
     chatWindowSource.indexOf("const onAttachFiles = useCallback"),
     chatWindowSource.indexOf("const { isDragOver, handleDragEnter", chatWindowSource.indexOf("const onAttachFiles = useCallback")),
   );
   assert.match(source, /partitionChatDroppedFiles\(files\)/);
   assert.match(source, /chatInputRef\?\.current\?\.addImages\(images\)/);
-  assert.match(source, /importProjectFiles\(projectFiles\)/);
+  assert.match(source, /importProjectFiles\(files\)/);
 });
 
 test("the add-files label is available in every locale", () => {
@@ -33,14 +33,14 @@ test("the add-files label is available in every locale", () => {
   assert.equal(englishMessages["a11y2.attach"], "Add attachments");
 });
 
-test("chat composers pick any file and read text files into the message", () => {
-  // A chat has no project to copy into, so the picker is no longer images-only: ChatWindow
-  // hands the non-image files to the composer, which reads them as text chips.
+test("chat composers preserve arbitrary binary files through the unified transfer path", () => {
+  // Unified transfers preserve originals and attach stable paths instead of reading arbitrary files as text.
   assert.doesNotMatch(chatInputSource, /chatOnly \|\| !onAttachFiles \? "image/);
   const attach = chatWindowSource.slice(
     chatWindowSource.indexOf("const importProjectFiles = useCallback"),
     chatWindowSource.indexOf("const onDrop = useCallback"),
   );
-  assert.match(attach, /if \(chatOnly\) \{[\s\S]*?chatInputRef\?\.current\?\.addTextFiles\(projectFiles\)/);
+  assert.match(attach, /uploadSessionFiles\(setup.sessionId,projectFiles,/);
+  assert.doesNotMatch(attach, /addTextFiles\(projectFiles\)/);
   assert.doesNotMatch(attach, /chat\.chatOnlyImagesOnly/);
 });

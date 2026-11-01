@@ -16,6 +16,7 @@ import { normalizeToolCalls } from "@/lib/normalize";
 import { attachmentAwareTitle } from "@/lib/chat-attachments";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import { mergeComposerQueueSnapshot, type ComposerQueueActionResult, type PendingComposerMessage } from "@/lib/composer-queue-types";
+import { isRemoteHTTP } from "@/lib/remote-http";
 import { fetchWithRetry } from "@/lib/fetch-timeout";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import { rememberScrollPosition, sessionScrollTops } from "@/lib/scroll-memory";
@@ -497,6 +498,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       onEvent: (event) => handleAgentEventRef.current?.(event as AgentEvent),
       shouldMaintain: (sid) => (
         sessionHookMountedRef.current
+        && (!isRemoteHTTP() || document.visibilityState !== "hidden")
         && sessionIdRef.current === sid
         && (
           agentRunningRef.current
@@ -1228,6 +1230,24 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [closeEvents, maintainEventsConnected, session?.id]);
+
+  // A suspended iPhone page must not retain sockets and starve the next page.
+  useEffect(() => {
+    if (!isRemoteHTTP()) return;
+    const suspend = () => { eventConnectionRef.current?.close(); };
+    const visible = () => {
+      if (document.visibilityState === "hidden") suspend();
+      else if (sessionIdRef.current) maintainEventsConnected(sessionIdRef.current);
+    };
+    document.addEventListener("visibilitychange", visible);
+    window.addEventListener("pagehide", suspend);
+    window.addEventListener("pageshow", visible);
+    return () => {
+      document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("pagehide", suspend);
+      window.removeEventListener("pageshow", visible);
+    };
+  }, [maintainEventsConnected]);
 
   const respondToExtensionUi = useCallback(async (
     request: ExtensionUiDialogRequest,

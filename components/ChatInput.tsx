@@ -70,6 +70,9 @@ interface Props {
   onSend: (message: string, images?: AttachedImage[]) => void;
   /** Files picked with "+": images and other files. Without it the picker takes images only. */
   onAttachFiles?: (files: File[]) => void;
+  fileUploadBusy?: boolean;
+  fileUploadStatus?: string;
+  onOpenSessionFiles?: () => void;
   onAbort: () => void;
   onSteer?: (message: string, images?: AttachedImage[]) => void;
   onFollowUp?: (message: string, images?: AttachedImage[]) => void;
@@ -795,7 +798,7 @@ export function ModelScopeWarningBanner({
 }
 
 export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
-  onSend, onAttachFiles, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
+  onSend, onAttachFiles, fileUploadBusy=false, fileUploadStatus, onOpenSessionFiles, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, workspaceUnavailable, onRecheckWorkspace, modelScopeWarnings, onDismissModelScopeWarnings, onOpenModelsConfig, onModelChange, modelSwitching,
   defaultModel, onSetDefaultModel,
   onCompact, onAbortCompaction, isCompacting, compactError, compactNotice, compactResult, summarizationRetry, toolPreset, onToolPresetChange, getToolSetup, onCustomTools, toolSelectionCustomized,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
@@ -1350,14 +1353,14 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     if (builtinAllowed && await runBuiltinCommand(msg)) return;
     if (isStreaming) return;
     // A run cannot start in a cwd that is gone; keep the draft until it is back or another project is picked.
-    if (workspaceUnavailable) return;
+    if (workspaceUnavailable || fileUploadBusy) return;
     const resolvedMessage = composeMessageWithAttachedFiles(
       await resolveSessionReferences(msg, sessionMentionTargetsRef.current),
       attachedFilesRef.current,
     );
     onSend(resolvedMessage, attachedImages.length ? attachedImages : undefined);
     clearInput();
-  }, [value, attachedImages, workspaceUnavailable, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock, sessionMentionTargetsRef]);
+  }, [value, attachedImages, workspaceUnavailable, fileUploadBusy, isStreaming, runBuiltinCommand, onSend, clearInput, onAudioUnlock, sessionMentionTargetsRef]);
 
   const slashQuery = !compact && value.startsWith("/") && !/\s/.test(value.slice(1))
     ? value.slice(1).toLowerCase()
@@ -1393,7 +1396,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
     : t(slashQuery ? "chat.matches" : "chat.commands", { count: filteredSlashCommands.length });
   const hasInputText = Boolean(value.trim());
   const canQueueStreamingMessage = hasInputText || attachedImages.length > 0 || attachedFiles.length > 0;
-  const canSend = canQueueStreamingMessage && !workspaceUnavailable;
+  const canSend = canQueueStreamingMessage && !workspaceUnavailable && !fileUploadBusy;
   const showStop = isStreaming && !canQueueStreamingMessage;
   // Warn when images are attached but the selected model is known not to accept
   // image input (#584), including a resolved default. Unknown models stay silent.
@@ -3062,8 +3065,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <div ref={toolDropdownRef} style={{ position: "relative" }}>
                 <button
                   className="native-toolbar-button"
-                  onClick={() => !isStreaming && setToolDropdownOpen((v) => !v)}
-                  disabled={isStreaming}
+                  onClick={() => setToolDropdownOpen((v) => !v)}
                   title="上下文与能力"
                   aria-label="上下文与能力"
                   aria-haspopup="dialog"
@@ -3077,9 +3079,9 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                     border: "none",
                     borderRadius: 8,
                     color: "var(--text-muted)",
-                    cursor: isStreaming ? "not-allowed" : "pointer",
+                    cursor: "pointer",
                     fontSize: 12,
-                    opacity: isStreaming ? 0.5 : 1,
+                    opacity: 1,
                     transition: "background 0.12s, color 0.12s",
                   }}
                 >
@@ -3090,6 +3092,23 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
                 </button>
                 {toolDropdownOpen && getToolSetup && <ToolSetupDialog current={toolPreset??"configured"} load={getToolSetup} onPreset={async p=>{await onToolPresetChange(p);}} onApply={onCustomTools} onClose={()=>setToolDropdownOpen(false)} />}
               </div>
+            )}
+
+            {onCompact && !isCompacting && (
+              <button
+                type="button"
+                className="native-toolbar-button"
+                disabled={!canCompactNow}
+                onClick={() => { if (canCompactNow) onCompact(); }}
+                aria-label={t("chat.compactContext")}
+                title={t("chat.compactContext")}
+                style={{ display: "flex", alignItems: "center", gap: 5, height: 32,
+                  padding: "0 10px", border: "none", borderRadius: 8,
+                  background: "none", color: "var(--text-muted)", fontSize: 12,
+                  cursor: canCompactNow ? "pointer" : "default", opacity: canCompactNow ? 1 : 0.5 }}
+              >
+                <span style={{ whiteSpace: "nowrap" }}>{t("chat.compactContext")}</span>
+              </button>
             )}
 
             {(automationKnown || canCompactNow) && (
@@ -3138,6 +3157,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
 
         </div>}
         </div>
+        {fileUploadBusy && <p role="status" aria-live="polite">{fileUploadStatus||"正在上传附件"}</p>}
         {!compact && <div className="a11y-attachment-row">          {/* Persistent attachment action after the input, send and model controls. */}
           {!compact && (
             <button
@@ -3156,7 +3176,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               <span>{t("a11y2.attach")}</span>
             </button>
           )}
-<span id="composer-attachment-help" className="a11y-sr-only">{t("a11y2.attachHint")}</span></div>}
+<button type="button" className="native-toolbar-button" onClick={onOpenSessionFiles} disabled={fileUploadBusy} aria-label="会话文件，下载附件">会话文件</button><span id="composer-attachment-help" className="a11y-sr-only">{t("a11y2.attachHint")}</span></div>}
       </div>
     </fieldset>
   );

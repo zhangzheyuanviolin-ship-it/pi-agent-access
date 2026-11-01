@@ -649,7 +649,7 @@ function chatInputCallback(name, context) {
   }
   return new Script(ts.transpileModule(findCallback(source).getText(source), {
     compilerOptions: { target: ts.ScriptTarget.ES2020 },
-  }).outputText).runInNewContext(context);
+  }).outputText).runInNewContext({fileUploadBusy:false,...context});
 }
 
 test("while a run streams, a bare /mcp opens Settings or is queued as before", async () => {
@@ -938,7 +938,7 @@ test("handleSend sends exactly once and routes builtin commands through the pend
     let cleared = 0;
     let builtinCalls = 0;
     const handler = script.runInNewContext({
-      value, attachedImages, isStreaming: false, workspaceUnavailable,
+      value, attachedImages, isStreaming: false, workspaceUnavailable, fileUploadBusy:false,
       attachedFilesRef: { current: [] }, composeMessageWithAttachedFiles,
       onAudioUnlock() {},
       runBuiltinCommand: async () => {
@@ -984,7 +984,7 @@ test("handleSend sends exactly once and routes builtin commands through the pend
 test("a missing workspace replaces the model error and disables Send", () => {
   const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
   assert.match(source, /workspaceUnavailable\s*\?\s*<WorkspaceUnavailableBanner[\s\S]*?:\s*<ModelErrorBanner error=\{modelError\} \/>/);
-  assert.match(source, /const canSend = canQueueStreamingMessage && !workspaceUnavailable;/);
+  assert.match(source, /const canSend = canQueueStreamingMessage && !workspaceUnavailable && !fileUploadBusy;/);
   assert.match(source, /disabled=\{!showStop && \(!canSend/);
 });
 

@@ -1,3 +1,4 @@
+import { visibleBrowserLease } from "../visible-browser-lease";
 /**
  * One server-sent event stream for every tab of a browser.
  *
@@ -55,7 +56,7 @@ export interface SharedStreamOptions<T> {
 function browserEnv(): SharedStreamEnv | null {
   if (typeof EventSource === "undefined") return null;
   return {
-    locks: typeof navigator !== "undefined" ? (navigator as { locks?: LockManagerLike }).locks : undefined,
+    locks: (typeof navigator !== "undefined" ? (navigator as { locks?: LockManagerLike }).locks : undefined) ?? visibleBrowserLease(),
     createChannel: typeof BroadcastChannel !== "undefined"
       ? (name) => new BroadcastChannel(name) as unknown as ChannelLike
       : undefined,
@@ -66,6 +67,26 @@ function browserEnv(): SharedStreamEnv | null {
 
 /** Start receiving events; the returned function stops, and releases leadership if held. */
 export function openSharedEventStream<T>(options: SharedStreamOptions<T>): () => void {
+  if (!options.env && typeof document !== "undefined") {
+    let stop: (() => void) | null = null;
+    const visible = () => {
+      if (document.visibilityState === "hidden") { stop?.(); stop = null; }
+      else if (!stop) {
+        const env = browserEnv();
+        if (env) stop = openSharedEventStream({ ...options, env });
+      }
+    };
+    const hide = () => { stop?.(); stop = null; };
+    document.addEventListener("visibilitychange", visible);
+    window.addEventListener("pagehide", hide);
+    window.addEventListener("pageshow", visible);
+    visible();
+    return () => {
+      hide(); document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("pagehide", hide);
+      window.removeEventListener("pageshow", visible);
+    };
+  }
   const env = options.env ?? browserEnv();
   if (!env) return () => undefined;
   const retryMs = env.retryMs ?? 3000;

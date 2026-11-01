@@ -39,6 +39,19 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
+  const shared = process.env.PI_WEB_SHARED_BACKEND_URL;
+  const sharedPassword = process.env.PI_WEB_SHARED_BACKEND_PASSWORD;
+  if (isApiRequest && !request.nextUrl.pathname.startsWith("/api/desktop/")
+      && request.nextUrl.pathname !== "/api/web-auth"
+      && shared === "http://127.0.0.1:30143" && sharedPassword) {
+    const headers = new Headers(request.headers);
+    headers.set("authorization", "Basic " + Buffer.from("pi:" + sharedPassword).toString("base64"));
+    headers.set("host", "127.0.0.1:30143");
+    if (headers.has("origin")) headers.set("origin", shared);
+    for (const key of ["forwarded", "x-forwarded-host", "x-forwarded-proto"]) headers.delete(key);
+    return NextResponse.rewrite(new URL(request.nextUrl.pathname + request.nextUrl.search, shared), {request: {headers}});
+  }
+
   const password = process.env.PI_WEB_PASSWORD;
   if (!isWebPasswordEnabled(password)) {
     if (request.nextUrl.pathname === "/login") {

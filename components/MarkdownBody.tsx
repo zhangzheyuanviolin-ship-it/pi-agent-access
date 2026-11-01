@@ -172,6 +172,9 @@ function buildComponents(
     a({ href, children, ...props }) {
       // `node` is react-markdown metadata, not a DOM attribute.
       delete props.node;
+      if (href && /^\/api\/outputs\/[a-f0-9-]{36}$/.test(href)) {
+        return <a href={href} download aria-label={`${linkText(children) || "文件"}，下载文件`}>{children}</a>;
+      }
       const filePath = onOpenFile ? resolveLocalFileHref(href, cwd) : null;
       const openFile = onOpenFile;
       if (!filePath || !openFile) {
