@@ -1,0 +1,59 @@
+--- a/model_gateway.py
++++ b/model_gateway.py
+@@ -6 +6 @@
+-import http.client,json,os,select,signal,socket,subprocess,threading,time,urllib.request,urllib.error
++import http.client,json,os,select,signal,socket,subprocess,threading,time,urllib.request,urllib.error,hashlib
+@@ -104,0 +105,37 @@
++    def _receipt_path(self,entry):
++        return self.run/('backend-ownership-'+str(entry['port'])+'.json')
++    def _stamp(self,pid):
++        return subprocess.check_output(['/bin/ps','-p',str(pid),'-o','uid=,lstart='],text=True,timeout=5).strip()
++    def _recipe_hash(self,entry):
++        return hashlib.sha256(json.dumps(entry.get('args',[]),ensure_ascii=False).encode()).hexdigest()
++    def _record_owner(self,entry,pid):
++        if str(self.run)=='/unused':return
++        self._receipt_path(entry).write_text(json.dumps({'pid':pid,'stamp':self._stamp(pid),'recipe':self._recipe_hash(entry)}))
++        self._receipt_path(entry).chmod(0o600)
++    def _owns_server(self,entry,pid):
++        if adopts_recipe(pid,entry):return True
++        # oMLX changes argv to omlx-server. Only a private launch receipt with
++        # the same PID, kernel start time, UID and catalog recipe can adopt it.
++        if entry['engine']!='omlx':return False
++        try:
++            r=json.loads(self._receipt_path(entry).read_text())
++            return r['pid']==pid and r['stamp']==self._stamp(pid) and r['recipe']==self._recipe_hash(entry)
++        except (OSError,ValueError,KeyError,subprocess.SubprocessError):return False
++    def _stop_idle_server(self,entry):
++        if not entry.get('args'):return False
++        pid=owner_pid(entry['port'])
++        if pid is None or not self._owns_server(entry,pid):return False
++        if entry['engine']=='sushi':
++            if sushi_busy(entry['port']):raise RuntimeError('Backend became active; refusing to release its idle memory')
++            if any(x.get('loaded',True)for x in api(entry['port'],'/v1/models')['data']):return False
++        elif entry['engine']=='omlx':
++            if other_backend_busy(entry):raise RuntimeError('oMLX became active; switching refused')
++            if api(entry['port'],'/api/status')['loaded_models']:return False
++        else:return False
++        os.kill(pid,signal.SIGTERM)
++        deadline=time.monotonic()+30
++        while not port_closed(entry['port']):
++            if time.monotonic()>deadline:raise RuntimeError('Idle backend did not exit; no competing model loaded')
++            time.sleep(.2)
++        self.children.pop(entry['id'],None)
++        return True
+@@ -146 +183,5 @@
+-            if not loaded:continue
++            if not loaded:
++                # Unloaded models can still leave gigabytes in the MLX pool.
++                # Reclaim only positively identified, idle catalog servers.
++                self._stop_idle_server(m)
++                continue
+@@ -152,0 +194 @@
++                self._stop_idle_server(m)
+@@ -158,0 +201 @@
++                self._stop_idle_server(m)
+@@ -178,0 +222,2 @@
++        if target['engine'] in ('sushi','omlx') and not port_closed(target['port']):
++            self._stop_idle_server(target)
+@@ -194,0 +240 @@
++            self._record_owner(target,self.children[target['id']].pid)

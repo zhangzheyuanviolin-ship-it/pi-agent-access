@@ -25,9 +25,10 @@ export function allowedTool(name:string,p:ContextPolicy,sourcePath=''):boolean{
 }
 
 /** A new category selection must supersede the transcript's previous (possibly empty) loadout. */
-export function selectCapabilityTools<T extends {name:string;sourceInfo?:unknown;exposure?:string}>(tools:readonly T[],policy:ContextPolicy,active:readonly string[]):string[]{
+export function selectCapabilityTools<T extends {name:string;sourceInfo?:unknown;exposure?:string}>(tools:readonly T[],policy:ContextPolicy,active:readonly string[],availability:{video?:boolean}={}):string[]{
  const current=new Set(active);
  return tools.filter(t=>{
+  if(t.name==='video_analyze'&&!availability.video)return false;
   if(!allowedTool(t.name,policy,(t.sourceInfo as {path?:string}|undefined)?.path??''))return false;
   if(t.name==='codemode'||t.name==='tool_search'||t.name==='powershell'||t.exposure==='deferred'||t.exposure==='codemode')return current.has(t.name);
   return t.exposure!=='hidden';

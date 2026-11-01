@@ -1,3 +1,4 @@
+import {videoRoute} from './video-analysis';
 import {pendingAttachments,attachmentNotice,videoAttachmentNotice,NOTIFIED_ATTACHMENTS,DELIVERY_NOTIFIED,DELIVERY_GUIDE,needsDeliveryGuide} from './received-attachments';
 import {createPermissionGuardExtension} from './settings-agent/permissions';
 import {createSettingsAgentExtension} from './settings-agent/extension';
@@ -605,7 +606,7 @@ export class AgentSessionWrapper {
       }
       this.extensionsBound = true;
       const entries=this.inner.sessionManager.getEntries?.() as unknown as SessionEntry[] | undefined;
-      if(entries&&hasExactToolSelection(entries))this.setActiveToolSelection(readSessionToolSelection(entries)??[]);
+      if(!this.isRunning()&&entries&&hasExactToolSelection(entries))this.setActiveToolSelection(readSessionToolSelection(entries)??[]);
       console.log(`[pi-web] session_start dispatched to extensions for session ${this.inner.sessionId}`);
     })().catch((err) => {
       this.extensionBindingError = err;
@@ -622,7 +623,7 @@ export class AgentSessionWrapper {
       throw err instanceof Error ? err : new Error(String(err));
     }
     const entries=this.inner.sessionManager.getEntries?.() as unknown as SessionEntry[] | undefined;
-    if(entries&&hasExactToolSelection(entries))this.setActiveToolSelection(readSessionToolSelection(entries)??[]);
+    if(!this.isRunning()&&entries&&hasExactToolSelection(entries))this.setActiveToolSelection(readSessionToolSelection(entries)??[]);
     if (this.extensionBindingError) {
       throw this.extensionBindingError instanceof Error
         ? this.extensionBindingError
@@ -666,7 +667,7 @@ export class AgentSessionWrapper {
   /** Apply a coding tool selection; `carry` defaults to the tools active now. */
   setActiveToolSelection(toolNames: string[], carry: readonly string[] = this.inner.getActiveToolNames()): void {
     const managed=readPolicyRecord(this.inner.sessionManager?.getEntries?.()??[]);
-    if(managed){this.inner.setActiveToolsByName(selectCapabilityTools(this.inner.getAllTools(),managed.policy,this.inner.getActiveToolNames()));return;}
+    if(managed){this.inner.setActiveToolsByName(selectCapabilityTools(this.inner.getAllTools(),managed.policy,this.inner.getActiveToolNames(),{video:!!videoRoute(this.inner.model)}));return;}
     const entries=this.inner.sessionManager.getEntries() as unknown as SessionEntry[];
     const exact=hasExactToolSelection(entries);
     const names = resolveActiveToolNames(this.inner, exact ? readSessionToolSelection(entries) ?? toolNames : toolNames, carry, exact);
@@ -2818,7 +2819,7 @@ export async function startRpcSession(
     });
 
     chatSessionRef.current = inner;
-    if(managedRecord)inner.setActiveToolsByName(selectCapabilityTools(inner.getAllTools(),managedRecord.policy,inner.getActiveToolNames()));
+    if(managedRecord)inner.setActiveToolsByName(selectCapabilityTools(inner.getAllTools(),managedRecord.policy,inner.getActiveToolNames(),{video:!!videoRoute(inner.model)}));
 
     // A pinned selection replaces only the coding tools of the SDK's initial loadout, which
     // already holds the extension tools pi activates on registration and whatever
