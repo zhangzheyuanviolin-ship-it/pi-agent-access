@@ -8,7 +8,12 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('--output', type=Path, default=root / 'build/release')
+parser.add_argument('--gate', type=Path, help='Fresh complete local release regression evidence')
+parser.add_argument('--development-only', action='store_true', help='Build a non-release test artifact; stable publication is forbidden')
 args = parser.parse_args()
+if not args.development_only:
+ gate = str(args.gate) if args.gate else os.environ.get('PI_RELEASE_GATE_FILE', '')
+ subprocess.run(['node', str(root / 'scripts/verify-access-release-gate.mjs'), gate], cwd=root, check=True)
 output = args.output.resolve()
 output.mkdir(parents=True, exist_ok=True)
 version = json.loads((root / 'src-tauri/pi-agent-desktop-package.json').read_text())['version']

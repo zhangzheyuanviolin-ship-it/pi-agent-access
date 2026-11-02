@@ -1,0 +1,9 @@
+import test from'node:test';import assert from'node:assert/strict';import{REQUIRED,validateGate,sourceFingerprint}from'./verify-access-release-gate.mjs';
+function gate(){return{version:1,sourceDigest:'source',completedAt:new Date().toISOString(),localModelCount:6,checks:Object.fromEntries(REQUIRED.map(id=>[id,{status:'passed',evidence:[{path:'/not-read-in-unit-test',sha256:'a'.repeat(64)}]}]))};}
+test('valid complete attestation is accepted',()=>assert.deepEqual(validateGate(gate(),{sourceDigest:'source',verifyEvidence:false}),[]));
+test('every missing historical regression independently blocks release',()=>{for(const id of REQUIRED){const g=gate();delete g.checks[id];assert.ok(validateGate(g,{sourceDigest:'source',verifyEvidence:false}).some(x=>x.includes(id)));}});
+test('pending, failed, skipped and unknown results cannot count as passes',()=>{for(const status of ['pending','failed','skipped','unverified']){const g=gate();g.checks.video_cloud_mobile.status=status;assert.ok(validateGate(g,{sourceDigest:'source',verifyEvidence:false}).length);}});
+test('changed source, old or future evidence, changed roster are rejected',()=>{const g=gate();assert.ok(validateGate(g,{sourceDigest:'different',verifyEvidence:false}).length);g.completedAt='2020-01-01';assert.ok(validateGate(g,{sourceDigest:'source',verifyEvidence:false}).length);g.completedAt='2099-01-01';assert.ok(validateGate(g,{sourceDigest:'source',verifyEvidence:false}).length);g.localModelCount=5;assert.ok(validateGate(g,{sourceDigest:'source',verifyEvidence:false}).length);});
+test('evidence must exist and match, even when status says passed',()=>assert.ok(validateGate(gate(),{sourceDigest:'source'}).length));
+
+test('current repository fingerprint can be calculated',()=>assert.match(sourceFingerprint(),/^[a-f0-9]{64}$/));

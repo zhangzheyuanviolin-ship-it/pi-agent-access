@@ -3,7 +3,7 @@ import {pendingAttachments,attachmentNotice,videoAttachmentNotice,NOTIFIED_ATTAC
 import {createPermissionGuardExtension} from './settings-agent/permissions';
 import {createSettingsAgentExtension} from './settings-agent/extension';
 import {readDefaultPolicy} from './context-capabilities/store';
-import {readPolicyRecord,POLICY_ENTRY,selectCapabilityTools,type PolicyRecord} from './context-capabilities/policy';
+import {defaultPolicy,readPolicyRecord,POLICY_ENTRY,selectCapabilityTools,type PolicyRecord} from './context-capabilities/policy';
 import {buildPolicyRecord,createCapabilityTools,createContextAuditExtension,inventory} from './context-capabilities/runtime';
 import {createManagedSystemPromptExtension} from './exact-system-prompt';
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
@@ -2597,8 +2597,16 @@ export async function startRpcSession(
   const sessionCwd = sessionManager.getCwd();
   let managedRecord = readPolicyRecord(sessionManager.getEntries()) as (PolicyRecord & {pluginPrompt?:string})|undefined;
   if (!managedRecord && !sessionFile) {
-    const policy=readDefaultPolicy();
-    if(policy){managedRecord=await buildPolicyRecord(sessionCwd,policy);sessionManager.appendCustomEntry(POLICY_ENTRY,structuredClone(managedRecord));}
+    const savedDefault=readDefaultPolicy();
+    const policy=savedDefault??defaultPolicy();
+    if(!savedDefault){
+      const available=await inventory(sessionCwd);
+      policy.plugins=available.plugins.filter(x=>x.enabled&&x.approved).map(x=>x.path);
+      // Keep plain-chat file access restricted when creating its initial snapshot.
+      if(isChatWorkspacePath(sessionCwd))policy.enabled.files=false;
+    }
+    managedRecord=await buildPolicyRecord(sessionCwd,policy);
+    sessionManager.appendCustomEntry(POLICY_ENTRY,structuredClone(managedRecord));
   }
 
   const chatWorkspace = isChatWorkspacePath(sessionCwd) && !managedRecord;

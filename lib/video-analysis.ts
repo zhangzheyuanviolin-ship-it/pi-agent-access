@@ -33,8 +33,9 @@ export async function readVideoInput(path:string,cwd:string,route:VideoRoute,sig
  return {file,bytes:stat.size,duration:Number(metadata.format?.duration)||undefined,data:'data:video/mp4;base64,'+bytes.toString('base64')};
 }
 export function videoAnswer(payload:unknown,status:number):string{
- const p=payload as {base_resp?:{status_code:number;status_msg?:string};error?:{message?:string};choices?:{message?:{content?:string}}[]};
+ const p=payload as {base_resp?:{status_code:number;status_msg?:string};error?:{message?:string};choices?:{finish_reason?:string;message?:{content?:string}}[]};
  if(status<200||status>=300||p.error||p.base_resp&&p.base_resp.status_code!==0)throw Error(`视频模型请求失败（HTTP ${status}）：${p.error?.message??p.base_resp?.status_msg??'接口拒绝'}`);
+ if(p.choices?.[0]?.finish_reason==='length')throw Error('视频分析输出达到预算，结果未完整返回；不要把截断内容当作完整分析。请改用更简短的问题。');
  const answer=p.choices?.[0]?.message?.content;if(typeof answer!=='string'||!answer.trim())throw Error('视频模型未返回分析正文');return answer;
 }
 export const VIDEO_TOOL_NAME='video_analyze';
@@ -53,7 +54,18 @@ export function videoPathGranted(path:string,ctx:{cwd:string;sessionManager:{get
  }
  const file=resolveNamedFile(path,ctx.cwd);return !!file&&grants.allows(file,ctx.cwd);
 }
+export function videoReadPage(text:string,offset=1,limit?:number):string{
+ const lines=text.split('\n');
+ if(!Number.isInteger(offset)||offset<1||offset>lines.length)throw Error(`视频分析文字共${lines.length}行，所选行号超出范围；没有重新读取视频。`);
+ const end=Math.min(lines.length,offset-1+(limit??lines.length));
+ return `以下是已完成的原生视频分析文字，第${offset}至${end}行，共${lines.length}行；行号仅用于这份文字，不会读取更多视频帧。\n\n`+lines.slice(offset-1,end).join('\n');
+}
+export function videoReadIdentity(path:string,cwd:string,route:VideoRoute):string{
+ const file=realpathSync(resolve(cwd,path)),st=statSync(file);
+ return JSON.stringify([file,st.size,st.mtimeMs,st.ino,route.provider,route.model,route.endpoint]);
+}
 export function createVideoAnalysisExtension(options:{cwd?:string;restricted?:boolean}={}):Extract<InlineExtension,{factory:unknown}>{return {name:'pi-web-native-video',hidden:true,factory:pi=>{
+ const readAnalyses=new Map<string,Promise<AgentToolResult<unknown>>>();
  const analyze=async(args:{path:string;question:string},signal:AbortSignal|undefined,update:AgentToolUpdateCallback<unknown>|undefined,ctx:ExtensionToolContext):Promise<AgentToolResult<unknown>>=>{
 
   const started=Date.now();const heartbeat=setInterval(()=>update?.({content:[{type:"text" as const,text:`正在使用当前模型读取视频，已等待${Math.floor((Date.now()-started)/1000)}秒；可随时停止。`}],details:{phase:"video-analysis",elapsedSeconds:Math.floor((Date.now()-started)/1000)}}),10000);
@@ -62,7 +74,7 @@ export function createVideoAnalysisExtension(options:{cwd?:string;restricted?:bo
   const route=videoRoute(ctx.model);if(!route)throw Error('当前模型未启用视频读取，请选择支持视频的模型');
   const input=await readVideoInput(args.path,ctx.cwd,route,signal);const runtime=await ModelRuntime.create({refreshOnCreate:false,allowModelNetwork:false});const model=runtime.getModel(route.provider,route.model);if(!model)throw Error('视频模型已不在配置中');
   const auth=await runtime.getAuth(model);if(!auth?.auth.apiKey)throw Error('当前模型缺少可用凭证');
-  const response=await fetch(route.endpoint,{method:'POST',signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+auth.auth.apiKey},body:JSON.stringify({model:route.model,messages:[{role:'user',content:[{type:'text',text:`视频文件实际时长${input.duration?.toFixed(2)??'未知'}秒。请以这个真实时长为准；若无法可靠定位某个画面的秒数，按前段、中段、后段描述并说明不确定，不要虚构精确时间。视频由当前模型服务进行时序采样，不能声称逐帧完整检查。用户要求：${args.question}`},{type:'video_url',video_url:{url:input.data}}]}],max_tokens:1536,temperature:0,stream:false,...(route.provider==='mac-local-unified'?{enable_thinking:false}:{})})});
+  const response=await fetch(route.endpoint,{method:'POST',signal,headers:{'Content-Type':'application/json','Authorization':'Bearer '+auth.auth.apiKey},body:JSON.stringify({model:route.model,messages:[{role:'user',content:[{type:'text',text:`视频文件实际时长${input.duration?.toFixed(2)??'未知'}秒。请以这个真实时长为准；若无法可靠定位某个画面的秒数，按前段、中段、后段描述并说明不确定，不要虚构精确时间。视频由当前模型服务进行时序采样，不能声称逐帧完整检查。用户要求：${args.question}`},{type:'video_url',video_url:{url:input.data}}]}],max_tokens:8192,temperature:0,stream:false,...(route.provider==='mac-local-unified'?{enable_thinking:false}:{})})});
   const answer=videoAnswer(await response.json(),response.status);
   return {content:[{type:'text' as const,text:`视频实际时长：${input.duration?.toFixed(2)??'未知'}秒。以下为当前模型的原生视觉分析，时间与文字识别可能存在误差。\n\n${answer}`}],details:{model:route.model,provider:route.provider,path:input.file,bytes:input.bytes,duration:input.duration,nativeVideoFile:true}};
   }finally{clearInterval(heartbeat);}
@@ -72,9 +84,21 @@ export function createVideoAnalysisExtension(options:{cwd?:string;restricted?:bo
   const read=createReadToolDefinition(options.cwd);
   pi.registerTool({...read,async execute(id,args,signal,update,ctx){
    if(!isVideoPath(args.path))return read.execute(id,args,signal,update,ctx);
+   if(signal?.aborted)throw signal.reason;
    // A binary video is never decoded as UTF-8 or injected into the conversation.
-   const result=await analyze({path:args.path,question:'请直接使用当前模型的原生视频视觉能力，按时间轴详细描述视频的画面、人物、动作和可见文字；不要猜测没有看到的内容。'},signal,update?value=>update({content:value.content,details:undefined}):undefined,ctx);
-   return {...result,details:result.details as ReadToolDetails};
+   // A text offset paginates the completed description, never re-encodes the MP4.
+   if(options.restricted&&!videoPathGranted(args.path,ctx))throw Error('只能读取用户在本会话明确提供的视频文件');
+   const route=videoRoute(ctx.model);if(!route)throw Error('当前模型未启用视频读取，请选择支持视频的模型');
+   const key=videoReadIdentity(args.path,ctx.cwd,route);
+   let pending=readAnalyses.get(key);
+   if(!pending){
+    pending=analyze({path:args.path,question:'请按时间顺序简洁概括视频的主要画面、人物或物体、动作和能可靠识别的文字，不要猜测没看到的内容。'},signal,update?value=>update({content:value.content,details:undefined}):undefined,ctx);
+    readAnalyses.set(key,pending);while(readAnalyses.size>8)readAnalyses.delete(readAnalyses.keys().next().value!);
+    pending.catch(()=>{if(readAnalyses.get(key)===pending)readAnalyses.delete(key);});
+   }
+   const result=await pending;
+   const text=result.content.filter(c=>c.type==='text').map(c=>(c as {type:'text';text:string}).text).join('\n');
+   return {...result,content:[{type:'text' as const,text:videoReadPage(text,args.offset,args.limit)}],details:result.details as ReadToolDetails};
   }});
  }
  const syncModel=(_event:unknown,ctx:{model?:{provider:string;id:string}})=>{pi.setActiveTools(videoToolSelection(pi.getActiveTools(),!!videoRoute(ctx.model)));};

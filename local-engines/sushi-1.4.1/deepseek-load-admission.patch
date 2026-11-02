@@ -1,0 +1,40 @@
+--- a/src/model_load.zig
++++ b/src/model_load.zig
+@@ -1367,6 +1367,28 @@
+ /// model that fit comfortably inside the ~6.4 GB process limit.
+ /// `gpu_limit` = Metal's working-set limit (0 = unknown): a lowered `iogpu.wired_limit_mb` binds
+ /// below free RAM, and weights past it OOM in warmup instead of refusing by name.
++/// Use the existing declared ceiling for streamed DeepSeek, preserving active-buffer and margin checks.
++fn usesDeclaredLoadMemoryFloor(config: *const ModelConfig) bool {
++    return model_mod.usesSushiQuantMemoryBill(config) or (config.isDsv41() and config.expert_streaming);
++}
++
++test "DeepSeek streamed load honors declared memory floor without disabling admission" {
++    var config = ModelConfig{ .model_type = "deepseek_v41", .expert_streaming = true };
++    try testing.expect(usesDeclaredLoadMemoryFloor(&config));
++    config.expert_streaming = false;
++    try testing.expect(!usesDeclaredLoadMemoryFloor(&config));
++    const gib: u64 = 1 << 30;
++    try testing.expectEqual(@as(u64, 119 * gib), effectiveSushiAvailableBytes(102 * gib, 0, 122 * gib, 0, 119 * gib));
++    try testing.expect(memInsufficientForLoad(9 * gib, effectiveSushiAvailableBytes(102 * gib, 0, 105 * gib, 0, 105 * gib), 109 * gib));
++    // A genuinely competing resident allocation still reduces admission headroom.
++    try testing.expect(memInsufficientForLoad(9 * gib, effectiveSushiAvailableBytes(102 * gib, 0, 122 * gib, 15 * gib, 119 * gib), 109 * gib));
++    // Without a declared floor, preserve conservative physical-memory admission.
++    try testing.expect(memInsufficientForLoad(9 * gib, effectiveSushiAvailableBytes(102 * gib, 0, 122 * gib, 0, 0), 109 * gib));
++    const unknown = ModelConfig{ .model_type = "not_a_supported_model", .expert_streaming = true };
++    try testing.expect(!usesDeclaredLoadMemoryFloor(&unknown));
++
++}
++
+ fn effectiveAvailableBytes(host_avail: u64, proc_avail: u64, gpu_limit: u64) u64 {
+     const avail = if (proc_avail > 0) proc_avail else host_avail;
+     return if (gpu_limit > 0) @min(avail, gpu_limit) else avail;
+@@ -1825,7 +1847,7 @@
+                 std.Io.sleep(r.io, .fromMilliseconds(500), .real) catch {};
+             }
+         };
+-        var reader = Reader{ .io = sch.io, .gpu_limit = gpu_limit, .sushi = model_mod.usesSushiQuantMemoryBill(params.config), .wired_floor = @import("server.zig").wiredCeilingFloorFor(params.config) };
++        var reader = Reader{ .io = sch.io, .gpu_limit = gpu_limit, .sushi = usesDeclaredLoadMemoryFloor(params.config), .wired_floor = @import("server.zig").wiredCeilingFloorFor(params.config) };
+         var avail_bytes = reader.read();
+         const mtp_on = mtpChoiceFor(params.mtp_enabled, params.mtp_explicit, params.config).on;
+         var serving = if (scheduler_mod.load_serving_bill) |bill| bill(params.config, avail_bytes -| weights_bytes) else null;
