@@ -16,6 +16,7 @@ export function readPolicyRecord(entries:readonly {type:string;customType?:strin
 export const FILE_TOOLS=new Set(['read','write','edit','bash','powershell','grep','find','ls','video_analyze']);
 export function allowedTool(name:string,p:ContextPolicy,sourcePath=''):boolean{
  if(name==='settings_manage')return p.enabled.admin===true;
+ if(name==='video_analyze')return true;
  if(FILE_TOOLS.has(name))return p.enabled.files;
  if(name==='skill_load')return p.enabled.skills;
  if(name.startsWith('memory_'))return p.enabled.memory;

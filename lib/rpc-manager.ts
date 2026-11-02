@@ -1,4 +1,4 @@
-import {videoRoute} from './video-analysis';
+import {videoRoute,createVideoAnalysisExtension,videoToolSelection} from './video-analysis';
 import {pendingAttachments,attachmentNotice,videoAttachmentNotice,NOTIFIED_ATTACHMENTS,DELIVERY_NOTIFIED,DELIVERY_GUIDE,needsDeliveryGuide} from './received-attachments';
 import {createPermissionGuardExtension} from './settings-agent/permissions';
 import {createSettingsAgentExtension} from './settings-agent/extension';
@@ -2687,6 +2687,7 @@ export async function startRpcSession(
       if(managedRecord!.pluginPrompt===undefined){managedRecord!.pluginPrompt=text;sessionManager.appendCustomEntry(POLICY_ENTRY,structuredClone(managedRecord));}
       return managedRecord!.pluginPrompt??'';
     }):undefined;
+    const videoExtension=createVideoAnalysisExtension({cwd:sessionCwd,restricted:chatWorkspace||chatOnly||!!managedRecord&&!managedRecord.policy.enabled.files});
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
@@ -2697,7 +2698,7 @@ export async function startRpcSession(
         systemPrompt:managedRecord.prompt||' ',systemPromptOverride:()=>managedRecord!.prompt||' ',
         appendSystemPrompt:[' '],appendSystemPromptOverride:()=>[],
         skillsOverride:base=>({...base,skills:base.skills.filter(s=>!s.disableModelInvocation&&!managedRecord!.policy.disabledSkills.includes(s.filePath))}),
-        extensionFactories:[createPermissionGuardExtension(),createProjectCommandBashExtension({cwd:sessionCwd,settings:settingsManager}),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??'')],
+        extensionFactories:[createPermissionGuardExtension(),videoExtension,createProjectCommandBashExtension({cwd:sessionCwd,settings:settingsManager}),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??'')],
       } : subagentResources
         ? {
             noExtensions: !subagentResources.loadExtensions,
@@ -2712,7 +2713,7 @@ export async function startRpcSession(
                 }
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
-            extensionFactories: [createPermissionGuardExtension(),...(usesExactSystemPrompt?[exactSystemPromptExtension]:[])],
+            extensionFactories: [createPermissionGuardExtension(),videoExtension,...(usesExactSystemPrompt?[exactSystemPromptExtension]:[])],
           }
         : chatWorkspace
           ? {
@@ -2721,7 +2722,7 @@ export async function startRpcSession(
               noContextFiles: true,
               systemPrompt: chatWorkspacePrompt(chatFilesEnabled),
               extensionFactories: [
-              createPermissionGuardExtension(),
+              createPermissionGuardExtension(),videoExtension,
                 ...(builtins?.extensions ?? []),
                 createArtifactGuideExtension(),
                 ...(chatGrants
@@ -2743,11 +2744,11 @@ export async function startRpcSession(
         : chatOnly
           ? {
               ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS,
-              extensionFactories: [createPermissionGuardExtension(),exactSystemPromptExtension],
+              extensionFactories: [createPermissionGuardExtension(),videoExtension,exactSystemPromptExtension],
             }
         : {
             extensionFactories: [
-              createPermissionGuardExtension(),
+              createPermissionGuardExtension(),videoExtension,
               ...(builtins?.extensions ?? []),
               createReadOnlyMcpPolicyExtension(),
               createArtifactGuideExtension(),
@@ -2814,7 +2815,7 @@ export async function startRpcSession(
       ...(startupModel ? { model: startupModel } : {}),
       ...(initial?.thinkingLevel ? { thinkingLevel: initial.thinkingLevel } : {}),
       ...(scope.scopedModels.length > 0 ? { scopedModels: [...scope.scopedModels] } : {}),
-      ...(toolsOption !== undefined ? { tools: toolsOption } : {}),
+      ...(toolsOption !== undefined ? { tools: [...new Set([...toolsOption,'video_analyze'])] } : {}),
       ...(subagentResources ? { excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES] } : {}),
     });
 
@@ -2836,6 +2837,8 @@ export async function startRpcSession(
       );
       inner.setActiveToolsByName(chatWorkspace ? restrictToChatTools(inner, activeToolNames) : activeToolNames);
     }
+
+    inner.setActiveToolsByName(videoToolSelection(inner.getActiveToolNames(),!!videoRoute(inner.model)));
 
     const exactSystemPrompt = managedRecord ? ()=>[managedRecord!.prompt,managedRecord!.pluginPrompt].filter(Boolean).join("\n\n") : subagentResources?.exactSystemPrompt !== undefined
       ? () => subagentResources.exactSystemPrompt!

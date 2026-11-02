@@ -45,6 +45,7 @@ export const CHAT_READ_TOOL_NAME = "read";
  */
 export const CHAT_DEFAULT_TOOL_NAMES: readonly string[] = [
   CHAT_READ_TOOL_NAME,
+  "video_analyze",
   "codemode",
   "tool_search",
   SAVE_TO_DOWNLOADS_TOOL_NAME,

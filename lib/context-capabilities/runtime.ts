@@ -1,4 +1,3 @@
-import {createVideoAnalysisExtension} from '../video-analysis';
 import {ARTIFACT_GUIDE} from '../artifact-guide-extension';
 import {isArtifactsPromptEnabled} from '../artifact-settings';
 import {pluginApproved} from './plugin-access';
@@ -30,7 +29,6 @@ export async function buildPolicyRecord(cwd:string,policy:ContextPolicy):Promise
  return {policy,prompt:blocks.map(x=>`<${x.id}>\n${x.text}\n</${x.id}>`).join('\n\n'),components:blocks.map(({id,label,source,text})=>({id,label,source,chars:text.length,digest:createHash('sha256').update(text).digest('hex')})),createdAt:new Date().toISOString()};
 }
 export function createCapabilityTools(record:PolicyRecord,cwd:string,getSkills:()=>{name:string;filePath:string}[]):Extract<InlineExtension,{factory:unknown}>{return {name:'pi-web-capability-tools',hidden:true,factory:pi=>{
- if(record.policy.enabled.files)createVideoAnalysisExtension().factory(pi);
  const result=(value:unknown)=>({content:[{type:'text' as const,text:JSON.stringify(value)}],details:{}});
  if(record.policy.enabled.mcp)pi.registerTool({name:'mcp_discover',label:'查找MCP工具',description:'Find enabled MCP tools by query. Pass exact tool names in enable to declare them for subsequent calls. Other capability categories are never searched.',parameters:Type.Object({query:Type.Optional(Type.String()),enable:Type.Optional(Type.Array(Type.String(),{maxItems:8}))}),async execute(_id,args){
  const tools=pi.getAllTools().filter(t=>t.exposure!=='hidden'&&(t.name.startsWith('mcp__')||t.sourceInfo.path==='builtin:mcp'));
