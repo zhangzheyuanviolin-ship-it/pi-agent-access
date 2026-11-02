@@ -16,6 +16,7 @@ type OriginalContent = { type: string; text?: string; data?: string; mimeType?: 
 
 import {piContent} from './result.mjs';
 import {automaticAccessDecision} from './access-policy.mjs';
+import {piRuntimeEnvironment} from './runtime-environment.mjs';
 
 function commandFromEnvironment(selected?: string[]) {
   const raw = process.env.LCU_MCP_COMMAND;
@@ -675,6 +676,7 @@ export default function (pi: ExtensionAPI, options: {
         const candidate = createCuaClient({
           command: commandFromEnvironment(options.command),
           cwd: process.cwd(),
+          env: piRuntimeEnvironment(process.env),
           adapter,
           log,
           allowedOrigins: originsFromEnvironment(),

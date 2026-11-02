@@ -1,0 +1,13 @@
+# Pi Computer Use independence boundary
+
+The Pi host uses its own browser identity and state directory. It drops only the parent Codex executor, pipe and verifying-identity variables in its LCU subprocess; it does not modify the parent's environment or disable per-app/per-origin approval.
+
+On this machine a user-authorized local pin is recorded under `~/Library/Application Support/Pi Agent Access/computer-use-runtime/runtime-pin.json`. The signed application is cloned locally with APFS copy-on-write and is never launched as a second ChatGPT UI. The selected LCU launcher, Node, node_repl and browser connector point at that pin. Pi state lives under `computer-use-state`, with no ChatGPT auth.json copied. `computer-use/pin-runtime.mjs` creates a personal local pin; it must not be used to redistribute proprietary binaries.
+
+The source distribution still does not contain the OpenAI application payload. A fresh installation needs a compatible legitimate upstream runtime. The bootstrap prefers an existing local pin and preserves the normal approval requirements.
+
+This is not complete upstream independence. The native helper retains the upstream signature, bundle identity, macOS TCC/app-group/IPC and application-approval identity. The official Chrome extension also has one native-messaging registration per browser account; an upstream connector reinstall can replace that registration. A fixed local runtime prevents normal updates of /Applications/ChatGPT.app from replacing Pi's selected files, but does not prove that every OS/extension update is compatible or that upstream proprietary code can be rebuilt.
+
+For a fully autonomous implementation, replace those remaining interfaces with a separately signed, maintainable native macOS helper and an independent browser connector, keeping the Pi-facing tool contract stable. That requires separate implementation, accessibility/screen-recording authorization and real regression tests. Do not secretly switch the validated LCU backend or claim this future driver already exists.
+
+Validation on 2026-11-02: inherited identity produced a signed access refusal before browser discovery; user-authorized identity isolation restored actual discovery and page controls. Deterministic tests passed text, multiline input, button confirmation, scroll and HTML5 drop completion in the dedicated browser tab. Native-app HTML5 drag was not shown equivalent and remains a separate limitation. Two actual Pi/DeepSeek sessions passed browser tasks; the second ran after the shared web host restarted and the pinned process path was observed. Tests did not terminate ChatGPT/Codex to simulate full exit, did not disable networking, and did not test an OS upgrade. Never report those cases as measured.

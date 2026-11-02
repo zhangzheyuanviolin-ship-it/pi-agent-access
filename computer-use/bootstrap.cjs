@@ -18,18 +18,23 @@ function initializeProfile(agentDir, extension) {
   if(settings.extensions!==undefined&&!Array.isArray(settings.extensions))throw Error('Invalid extension settings; existing data preserved');
   if(!(settings.extensions||[]).includes(extension)){settings.extensions=[...(settings.extensions||[]),extension];write(file,settings);}
 }
-function prepare({enable=false, dataRoot=root(), distribution=__dirname, agentDir=process.env.PI_CODING_AGENT_DIR||path.join(dataRoot,'agent')}={}) {
+function prepare({enable=false, dataRoot=root(), distribution=__dirname, applicationPath='/Applications/ChatGPT.app', agentDir=process.env.PI_CODING_AGENT_DIR||path.join(dataRoot,'agent')}={}) {
   fs.mkdirSync(dataRoot,{recursive:true,mode:0o700});
   process.env.PI_CODING_AGENT_DIR=agentDir;
   const statusFile=path.join(dataRoot,'computer-use-status.json');
   const templates=path.join(distribution,'templates');
   const vendor=path.join(distribution,'lcu');
   const prefix=path.join(dataRoot,'lcu');
-  const current=path.join(prefix,'current');
+  let current=path.join(prefix,'current');
+  try {
+    const pin=JSON.parse(fs.readFileSync(path.join(dataRoot,'computer-use-runtime/runtime-pin.json'),'utf8'));
+    const expectedRoot=path.resolve(dataRoot,'computer-use-runtime')+path.sep;
+    if(pin.format===1&&typeof pin.lcu==='string'&&path.resolve(pin.lcu).startsWith(expectedRoot)&&fs.existsSync(path.join(pin.lcu,'installation.json'))&&fs.existsSync(pin.node))current=pin.lcu;
+  }catch{}
   const extensionDir=path.join(agentDir,'maintained-extensions/lcu');
   let status={version:VERSION,available:false,automaticAccess:false,message:'请先安装官方 ChatGPT，再点击启用电脑操作。'};
   try {
-    if(!fs.existsSync('/Applications/ChatGPT.app')){write(statusFile,status);return status;}
+    if(!fs.existsSync(applicationPath)&&!fs.existsSync(path.join(current,'installation.json'))){write(statusFile,status);return status;}
     if(!fs.existsSync(path.join(current,'installation.json'))){
       const staging=fs.mkdtempSync(path.join(dataRoot,'lcu-bundle-'));
       try {
@@ -38,13 +43,13 @@ function prepare({enable=false, dataRoot=root(), distribution=__dirname, agentDi
         for(const [name,record] of Object.entries(manifest.files))if(record.type==='symlink'){
           const link=path.join(staging,name);fs.rmSync(link,{force:true});fs.symlinkSync(record.target,link);
         }
-        const install=spawnSync(process.execPath,[path.join(staging,'scripts/install.mjs'),'--prefix',prefix,'--existing-app','/Applications/ChatGPT.app','--runtime-only','--yes'],{encoding:'utf8',timeout:60000,env:process.env});
+        const install=spawnSync(process.execPath,[path.join(staging,'scripts/install.mjs'),'--prefix',prefix,'--existing-app',applicationPath,'--runtime-only','--yes'],{encoding:'utf8',timeout:60000,env:process.env});
         if(install.status!==0)throw Error('LCU 安装未完成，请确认官方 ChatGPT 已正常安装。');
       } finally {fs.rmSync(staging,{recursive:true,force:true});}
     }
     fs.mkdirSync(extensionDir,{recursive:true,mode:0o700});
     const escaped=current.replaceAll('\\','\\\\').replaceAll("'","\\'");
-    for(const name of ['index.mjs','adapter.ts','result.mjs','image-frame.mjs','image-metadata.mjs','access-policy.mjs','window-recovery.mjs']){
+    for(const name of ['index.mjs','adapter.ts','result.mjs','image-frame.mjs','image-metadata.mjs','access-policy.mjs','window-recovery.mjs','runtime-environment.mjs']){
       const source=fs.readFileSync(path.join(templates,name),'utf8').replaceAll('__LCU_ROOT__',escaped);
       const dest=path.join(extensionDir,name);
       if(!fs.existsSync(dest)||fs.readFileSync(dest,'utf8')!==source)fs.writeFileSync(dest,source,{mode:0o600});
