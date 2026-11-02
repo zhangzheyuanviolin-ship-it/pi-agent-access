@@ -8,8 +8,8 @@ on:
       tag:
         description: Existing version tag
         required: true
-      part_count:
-        description: Number of installer-block-NNN.part assets
+      manifest_blob:
+        description: Git blob SHA of the verified transfer manifest
         required: true
       expected_size:
         description: Exact installer bytes
@@ -27,34 +27,41 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Verify all parts and upload the complete installer
+      - name: Verify transfer blobs and upload the complete installer
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_ID: ${{ inputs.release_id }}
           RELEASE_TAG: ${{ inputs.tag }}
-          PART_COUNT: ${{ inputs.part_count }}
+          MANIFEST_BLOB: ${{ inputs.manifest_blob }}
           EXPECTED_SIZE: ${{ inputs.expected_size }}
           EXPECTED_SHA256: ${{ inputs.sha256 }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import hashlib,json,os,re,subprocess
+          import base64,concurrent.futures,hashlib,json,os,re,subprocess
           from pathlib import Path
-          rid=os.environ['RELEASE_ID'];tag=os.environ['RELEASE_TAG'];sha=os.environ['EXPECTED_SHA256']
-          assert rid.isdigit() and re.fullmatch(r'v\d+\.\d+\.\d+',tag) and re.fullmatch(r'[a-f0-9]{64}',sha)
-          count=int(os.environ['PART_COUNT']);size=int(os.environ['EXPECTED_SIZE']);assert 0<count<1000 and 0<size<4*1024**3
-          repo=os.environ['GH_REPO'];d=json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/releases/{rid}']))
-          assert d['tag_name']==tag and d['draft']
-          assets={a['name']:a for a in d['assets']};Path('parts').mkdir();full=Path(f'Pi-Agent-Access-{tag[1:]}-macos-arm64.dmg')
-          total=hashlib.sha256()
+          rid=os.environ['RELEASE_ID'];tag=os.environ['RELEASE_TAG'];sha=os.environ['EXPECTED_SHA256'];manifest_sha=os.environ['MANIFEST_BLOB']
+          assert rid.isdigit() and re.fullmatch(r'v\d+\.\d+\.\d+',tag) and re.fullmatch(r'[a-f0-9]{64}',sha) and re.fullmatch(r'[a-f0-9]{40}',manifest_sha)
+          size=int(os.environ['EXPECTED_SIZE']);assert 0<size<4*1024**3
+          repo=os.environ['GH_REPO']
+          def api(path):return json.loads(subprocess.check_output(['gh','api',f'repos/{repo}/'+path]))
+          def blob(key):
+              assert re.fullmatch(r'[a-f0-9]{40}',key)
+              d=api('git/blobs/'+key);assert d['encoding']=='base64';b=base64.b64decode(d['content']);assert len(b)==d['size']
+              assert hashlib.sha1(b'blob '+str(len(b)).encode()+b'\0'+b).hexdigest()==key
+              return b
+          d=api('releases/'+rid);assert d['tag_name']==tag and d['draft']
+          manifest=json.loads(blob(manifest_sha));assert manifest['sha256']==sha and manifest['size']==size and len(manifest['parts'])<1000
+          Path('parts').mkdir()
+          def fetch(part):
+              assert re.fullmatch(r'installer-block-\d{3}\.part',part['name'])
+              b=blob(part['blob']);assert len(b)==part['size'] and hashlib.sha256(b).hexdigest()==part['sha256'];Path('parts',part['name']).write_bytes(b)
+          with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:list(pool.map(fetch,manifest['parts']))
+          full=Path(f'Pi-Agent-Access-{tag[1:]}-macos-arm64.dmg');total=hashlib.sha256()
           with full.open('wb') as output:
-              for i in range(count):
-                  name=f'installer-block-{i:03d}.part';a=assets[name];assert a['state']=='uploaded' and a.get('digest','').startswith('sha256:')
-                  p=Path('parts',name)
-                  with p.open('wb') as f:subprocess.run(['gh','api',a['url'],'-H','Accept: application/octet-stream','--allow-escape-sequences'],stdout=f,check=True)
-                  b=p.read_bytes();assert len(b)==a['size'] and 'sha256:'+hashlib.sha256(b).hexdigest()==a['digest']
-                  output.write(b);total.update(b)
+              for part in manifest['parts']:
+                  b=Path('parts',part['name']).read_bytes();output.write(b);total.update(b)
           assert full.stat().st_size==size and total.hexdigest()==sha
           subprocess.run(['gh','release','upload',tag,str(full),'--clobber'],check=True)
           PY

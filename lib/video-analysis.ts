@@ -67,7 +67,7 @@ export function createVideoAnalysisExtension(options:{cwd?:string;restricted?:bo
   return {content:[{type:'text' as const,text:`视频实际时长：${input.duration?.toFixed(2)??'未知'}秒。以下为当前模型的原生视觉分析，时间与文字识别可能存在误差。\n\n${answer}`}],details:{model:route.model,provider:route.provider,path:input.file,bytes:input.bytes,duration:input.duration,nativeVideoFile:true}};
   }finally{clearInterval(heartbeat);}
  };
- pi.registerTool({name:VIDEO_TOOL_NAME,label:'读取视频内容',description:'Use the CURRENT model own native video vision to read uploaded or local video files and describe frames, text and temporal events. This is the model intrinsic video input, NOT an external skill or cloud fallback. Prefer this over any cloud video-analysis skill. No setup or switch is needed. Pass the exact video path and the user question.',parameters:Type.Object({path:Type.String(),question:Type.String()}),execute:(_id,args,signal,update,ctx)=>analyze(args,signal,update,ctx)});
+ pi.registerTool({name:VIDEO_TOOL_NAME,annotations:{readOnlyHint:true,destructiveHint:false},label:'读取视频内容',description:'Use the CURRENT model own native video vision to read uploaded or local video files and describe frames, text and temporal events. This is the model intrinsic video input, NOT an external skill or cloud fallback. Prefer this over any cloud video-analysis skill. No setup or switch is needed. Pass the exact video path and the user question.',parameters:Type.Object({path:Type.String(),question:Type.String()}),execute:(_id,args,signal,update,ctx)=>analyze(args,signal,update,ctx)});
  if(options.cwd){
   const read=createReadToolDefinition(options.cwd);
   pi.registerTool({...read,async execute(id,args,signal,update,ctx){
