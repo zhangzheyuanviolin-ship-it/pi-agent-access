@@ -1,0 +1,5 @@
+# VoiceOver and large browser observations
+
+This machine-specific 2026-11-02 incident was an audio buffer mlock failure, not a missing VoiceOver process. macOS global user-wire allowance is distinct from the Metal/GPU allowance. The owner approved increasing only the global limit from 116823110451 to 125000000000 bytes on this 128-GiB Mac, keeping the per-process limit and model/GPU settings unchanged. It was added to the existing local startup job after a user-confirmed short load and zero new lock refusals. Do not apply that value automatically to other hardware. Long multimodal/cold-boot validation remains distinct from the short test.
+
+The browser observation adapter transports subsequent large AX trees as a lossless within-turn line patch, with an exact full snapshot saved locally. It clears on new agent turns, kernel resets and context compaction. Error text, focus and images remain. Old history is not rewritten; no model tool schema was added. The first full observation remains full. Actual three-frame offline replay saved about 59.8 percent of observation text tokens; this is not a measured full-agent latency improvement.

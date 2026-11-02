@@ -49,7 +49,7 @@ function prepare({enable=false, dataRoot=root(), distribution=__dirname, applica
     }
     fs.mkdirSync(extensionDir,{recursive:true,mode:0o700});
     const escaped=current.replaceAll('\\','\\\\').replaceAll("'","\\'");
-    for(const name of ['index.mjs','adapter.ts','result.mjs','image-frame.mjs','image-metadata.mjs','access-policy.mjs','window-recovery.mjs','runtime-environment.mjs']){
+    for(const name of ['index.mjs','adapter.ts','result.mjs','image-frame.mjs','image-metadata.mjs','access-policy.mjs','window-recovery.mjs','runtime-environment.mjs','observation-diff.mjs']){
       const source=fs.readFileSync(path.join(templates,name),'utf8').replaceAll('__LCU_ROOT__',escaped);
       const dest=path.join(extensionDir,name);
       if(!fs.existsSync(dest)||fs.readFileSync(dest,'utf8')!==source)fs.writeFileSync(dest,source,{mode:0o600});
