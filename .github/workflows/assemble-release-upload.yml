@@ -53,7 +53,7 @@ jobs:
               return b
           d=api('releases/'+rid);assert d['tag_name']==tag and d['draft']
           manifest=json.loads(blob(manifest_sha));assert manifest['sha256']==sha and manifest['size']==size and len(manifest['parts'])<1000
-          gate=manifest['releaseGate'];assert gate['version']==1 and re.fullmatch(r'[a-f0-9]{64}',gate['sourceDigest']) and gate['localModelCount']==6
+          gate=manifest['releaseGate'];assert gate['version']==1 and re.fullmatch(r'[a-f0-9]{64}',gate['sourceDigest']) and gate['localModelCount']==7
           required=['local_models','terminal','computer_driver','computer_model','video_cloud_mobile','memory_defaults','deepseek_repeat_load_cache','memory_admission_boundaries','historical_regression_suite','idle_cache_interval_recovery','accessibility_resource_monitor','network_download_preserved']
           assert all(gate['checks'].get(k,{}).get('status')=='passed' and gate['checks'][k].get('evidence') for k in required)
           assert gate['checks'].get('package_smoke',{}).get('status')=='passed' and gate['artifact']['sha256']==sha and gate['artifact']['size']==size
