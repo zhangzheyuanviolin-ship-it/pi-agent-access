@@ -1,0 +1,60 @@
+async hover(target){
+ let point=target;
+ if(target&&typeof target==='object'&&!Array.isArray(target)&&typeof target.selector==='string'){
+  const matches=await this.playwright.locator(target.selector).evaluateAll(elements=>elements.map(element=>{const r=element.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,width:r.width,height:r.height,visible:!!element.getClientRects().length};}));
+  if(matches.length!==1)throw new Error('hover selector must match exactly one current element');const r=matches[0];if(!r.visible||r.width<=0||r.height<=0)throw new Error('hover target not visible');point=[r.x,r.y];
+ }
+ if(!Array.isArray(point)||point.length!==2||!point.every(Number.isFinite))throw new Error('hover requires finite viewport [x,y] or {selector}');
+ const viewport=await this.playwright.evaluate(()=>({width:window.innerWidth,height:window.innerHeight}));if(point.some(v=>v<0)||point[0]>=viewport.width||point[1]>=viewport.height)throw new Error('hover target outside viewport at ['+point+']; scroll and observe first (the argument form was valid)');
+ await this.cua.move({x:point[0],y:point[1]});const observation=target&&typeof target.selector==='string'?await this.playwright.locator(target.selector).evaluate(el=>({hovered:el.matches(':hover'),ariaExpanded:el.getAttribute('aria-expanded'),visibleChildren:Array.from(el.children).filter(child=>child.getClientRects().length>0).slice(0,8).map(child=>({id:child.id||undefined,text:(child.innerText||child.textContent||'').trim().slice(0,200)}))})):undefined;return {pointerMoved:true,buttonsPressed:0,point,target:observation};
+}
+async waitFor(check,{argument,timeoutMs=3000,intervalMs=80,stableForMs=160}={}){
+ this.validateVerification(check,{argument,timeoutMs,intervalMs,stableForMs});
+ const started=Date.now();let matchedSince=null,last,attempts=0;const transientErrors=[];
+ do{try{last=await this.playwright.evaluate(check,argument);}catch(error){if(transientErrors.length===0&&/Debugger unattached/.test(String(error?.message||error))&&typeof this.ax.get==='function'){transientErrors.push(String(error.message||error));await this.ax.get('state');continue;}throw error;}attempts++;if(last){matchedSince??=Date.now();if(Date.now()-matchedSince>=stableForMs)return {matched:true,attempts,elapsedMs:Date.now()-started,value:last,transientErrors};}else matchedSince=null;
+  if(Date.now()-started>=timeoutMs)break;await new Promise(resolve=>setTimeout(resolve,intervalMs));
+ }while(Date.now()-started<=timeoutMs);
+ return {matched:false,attempts,elapsedMs:Date.now()-started,value:last,transientErrors,reason:'condition not confirmed; input was not replayed'};
+}
+async pressAndVerify(elementIndex,key,check,options){
+ this.validateVerification(check,options);await this.ax.pressKey(elementIndex,key);try{return {actionDispatched:true,verification:await this.waitFor(check,options)};}catch(error){return {actionDispatched:true,verification:{matched:false,error:String(error?.message||error),reason:'verification failed; input already dispatched, do not replay automatically'}};}
+}
+async inspect({selector='body *',query='',offset=0,limit=25,maxChars=4000}={}){
+ if(typeof selector!=='string'||typeof query!=='string'||!Number.isInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(maxChars)||maxChars<200||maxChars>12000)throw new Error('inspect: invalid bounded query or range');
+ return this.playwright.evaluate(({selector,query,offset,limit,maxChars})=>{
+  const needle=query.toLowerCase();let matches=0,used=0,items=[],nextOffset=null;
+  for(const el of document.querySelectorAll(selector)){
+   const label=el.getAttribute('aria-label')||el.getAttribute('title')||'',text=(el.innerText||el.textContent||'').trim().slice(0,600),role=el.getAttribute('role')||'';
+   if(needle&&!(label+' '+role+' '+text).toLowerCase().includes(needle))continue;
+   const index=matches++;if(index<offset)continue;if(items.length>=limit){nextOffset=index;break;}
+   const r=el.getBoundingClientRect(),item={index,tag:el.tagName,role,id:el.id||undefined,label,text,value:/password|one-time-code/.test((el.getAttribute('type')||'')+' '+(el.getAttribute('autocomplete')||''))?'[protected input]':typeof el.value==='string'?el.value.slice(0,600):undefined,visible:!!el.getClientRects().length,inViewport:r.top+r.height>0&&r.left+r.width>0&&r.left<window.innerWidth&&r.top<window.innerHeight,rect:{x:r.x,y:r.y,width:r.width,height:r.height}};
+   const size=JSON.stringify(item).length;if(used+size>maxChars){nextOffset=index;break;}items.push(item);used+=size;
+  }
+  return {items,nextOffset,snapshotOnly:true,note:'Fresh query; indices are not AX IDs. Re-query after page changes.'};
+ },{selector,query,offset,limit,maxChars});
+}
+
+async clickAndVerify(target,check,options){
+ this.validateVerification(check,options);
+ if(target&&typeof target==='object'&&!Array.isArray(target)&&typeof target.selector==='string'){
+  const stability=await this.stabilizeClickTarget(target.selector);
+  if(!stability.ready&&stability.reason!=='outside viewport')return {actionDispatched:false,verification:{matched:false,reason:stability.reason},preflightOnly:true};
+  await this.playwright.locator(target.selector).click();
+ }else await this.ax.click(target);
+ try{return {actionDispatched:true,verification:await this.waitFor(check,options)};}catch(error){return {actionDispatched:true,verification:{matched:false,error:String(error?.message||error),reason:'verification failed; input already dispatched, do not replay automatically'}};}
+}
+
+validateVerification(check,options={}){if(!options||typeof options!=="object")throw new Error("Invalid verification options");const{argument,timeoutMs=3000,intervalMs=80,stableForMs=160}=options;if(argument!==undefined)JSON.stringify(argument,(_key,value)=>{if(['function','symbol','bigint','undefined'].includes(typeof value)||(typeof value==='number'&&!Number.isFinite(value)))throw new Error('Verification argument must be finite JSON data');return value;});if(typeof check!=='function'||!Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>10000||!Number.isFinite(intervalMs)||(intervalMs<50||intervalMs>500)||!Number.isFinite(stableForMs)||stableForMs<0||stableForMs>timeoutMs)throw new Error('waitFor requires read-only predicate and bounded timing');}
+
+async stabilizeClickTarget(selector){
+ for(let attempt=0;attempt<4;attempt++){
+  const points=await this.playwright.locator(selector).evaluateAll(elements=>elements.map(el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,visible:!!el.getClientRects().length,width:r.width,height:r.height};}));
+  if(points.length!==1)throw new Error('click selector must match exactly one element');const box=points[0];if(!box.visible||box.width<=0||box.height<=0)throw new Error('click target not visible');
+  const viewport=await this.playwright.evaluate(()=>({width:window.innerWidth,height:window.innerHeight}));
+  if(box.x<0||box.y<0||box.x>=viewport.width||box.y>=viewport.height)return {ready:false,reason:'outside viewport'};
+  const moved=await this.hover({selector});await new Promise(resolve=>setTimeout(resolve,100));
+  const after=await this.playwright.locator(selector).evaluate(el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,hover:el.matches(':hover')};});
+  if(Math.abs(after.x-moved.point[0])<=1&&Math.abs(after.y-moved.point[1])<=1&&after.hover)return {ready:true};
+ }
+ return {ready:false,reason:'target moved during pointer preflight; no click sent'};
+}

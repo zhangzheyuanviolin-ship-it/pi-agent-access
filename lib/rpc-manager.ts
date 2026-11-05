@@ -6,6 +6,7 @@ import {readDefaultPolicy} from './context-capabilities/store';
 import {defaultPolicy,readPolicyRecord,POLICY_ENTRY,selectCapabilityTools,type PolicyRecord} from './context-capabilities/policy';
 import {buildPolicyRecord,createCapabilityTools,createContextAuditExtension,inventory} from './context-capabilities/runtime';
 import {createManagedSystemPromptExtension} from './exact-system-prompt';
+import {createLocalPrefixObserver} from './local-prefix-observer';
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
@@ -2687,7 +2688,7 @@ export async function startRpcSession(
     // which MCP servers the session connects (ADR 0006).
     const builtins = subagentResources || chatOnly || (managedRecord && !managedRecord.policy.enabled.mcp)
       ? undefined
-      : await createPiWebBuiltinExtensions({ agentDir });
+      : await createPiWebBuiltinExtensions({ agentDir,stableToolPrefix:true });
     const managedInventory=managedRecord?await inventory(sessionCwd):undefined;
     const managedExtensions=managedRecord?.policy.enabled.plugins?managedInventory?.plugins.filter(x=>x.enabled&&x.approved&&managedRecord!.policy.plugins.includes(x.path)).map(x=>x.path)??[]:[];
     const managedPromptExtension=managedRecord?createManagedSystemPromptExtension(()=>managedRecord!.prompt,text=>{
@@ -2696,17 +2697,18 @@ export async function startRpcSession(
       return managedRecord!.pluginPrompt??'';
     }):undefined;
     const videoExtension=createVideoAnalysisExtension({cwd:sessionCwd,restricted:chatWorkspace||chatOnly||!!managedRecord&&!managedRecord.policy.enabled.files});
+    const prefixObserver=createLocalPrefixObserver(sessionManager.getSessionId());
     const services = await createAgentSessionServices({
       cwd: sessionCwd,
       agentDir,
       settingsManager,
       resourceLoaderOptions: managedRecord ? {
-        noExtensions:true,additionalExtensionPaths:[...managedExtensions,...(managedRecord.policy.enabled.mcp?['builtin:mcp','builtin:codemode']:[])],
+        noExtensions:true,additionalExtensionPaths:[...managedExtensions,...(managedRecord.policy.enabled.mcp?['builtin:mcp','builtin:codemode','builtin:tool-search']:[])],
         noSkills:!managedRecord.policy.enabled.skills,noContextFiles:true,noPromptTemplates:true,noThemes:true,
         systemPrompt:managedRecord.prompt||' ',systemPromptOverride:()=>managedRecord!.prompt||' ',
         appendSystemPrompt:[' '],appendSystemPromptOverride:()=>[],
         skillsOverride:base=>({...base,skills:base.skills.filter(s=>!s.disableModelInvocation&&!managedRecord!.policy.disabledSkills.includes(s.filePath))}),
-        extensionFactories:[createPermissionGuardExtension(),videoExtension,createProjectCommandBashExtension({cwd:sessionCwd,settings:settingsManager}),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??'')],
+        extensionFactories:[createPermissionGuardExtension(),videoExtension,createProjectCommandBashExtension({cwd:sessionCwd,settings:settingsManager}),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??''),prefixObserver],
       } : subagentResources
         ? {
             noExtensions: !subagentResources.loadExtensions,
@@ -2721,7 +2723,7 @@ export async function startRpcSession(
                 }
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
-            extensionFactories: [createPermissionGuardExtension(),videoExtension,...(usesExactSystemPrompt?[exactSystemPromptExtension]:[])],
+            extensionFactories: [createPermissionGuardExtension(),videoExtension,...(usesExactSystemPrompt?[exactSystemPromptExtension]:[]),prefixObserver],
           }
         : chatWorkspace
           ? {
@@ -2746,13 +2748,14 @@ export async function startRpcSession(
                   getExtraTools: () => readChatSettings().allowedTools,
                   ...(chatGrants ? { grants: chatGrants } : {}),
                 }),
+                prefixObserver,
               ],
               extensionsOverride: (base) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES),
             }
         : chatOnly
           ? {
               ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS,
-              extensionFactories: [createPermissionGuardExtension(),videoExtension,exactSystemPromptExtension],
+              extensionFactories: [createPermissionGuardExtension(),videoExtension,exactSystemPromptExtension,prefixObserver],
             }
         : {
             extensionFactories: [
@@ -2769,6 +2772,7 @@ export async function startRpcSession(
                 () => listSubagentProfiles(sessionCwd),
                 isBuiltInSubagentsEnabled,
               ),
+              prefixObserver,
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
           },

@@ -5,7 +5,7 @@ import test from "node:test";
 const source = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
 
 test("chat workspace classification comes from the server, never a derived path", async () => {
-  assert.match(source, /fetch\("\/api\/chat-workspace", \{ cache: "no-store", signal: controller\.signal \}\)/);
+  assert.match(source, /fetchWithRetry\("\/api\/chat-workspace", \{ init: \{ cache: "no-store", signal: controller\.signal \} \}\)/);
   assert.match(source, /return selectedSession\.workspaceKind\s*\?\?\s*\(chatWorkspaceCwd && selectedSession\.cwd === chatWorkspaceCwd \? "chat" : "project"\)/);
   assert.match(source, /if \(cwd && chatWorkspaceCwd && cwd === chatWorkspaceCwd\) return "chat"/);
   assert.match(source, /if \(data\.workspaceKind === "chat"\) \{\s*setChatWorkspaceCwd\(data\.cwd\);/);

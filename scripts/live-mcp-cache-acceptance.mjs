@@ -1,0 +1,58 @@
+/** Explicit local GPU acceptance only. Never included in the default unit suite. */
+if(!process.argv.includes('--run-local'))throw Error('Explicit --run-local required; no automatic model test');
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir,homedir} from 'node:os';
+import {fileURLToPath} from 'node:url';
+import {createHash,randomUUID} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+import {setTimeout as delay} from 'node:timers/promises';
+import {createJiti} from 'jiti';
+import {createAgentSession,DefaultResourceLoader,ModelRuntime,SessionManager,SettingsManager} from '@earendil-works/pi-coding-agent';
+const root=fileURLToPath(new URL('..',import.meta.url));const jiti=createJiti(import.meta.url,{moduleCache:false});
+const {createPiWebBuiltinExtensions}=await jiti.import('../lib/builtin-extensions.ts');
+const {AgentSessionWrapper}=await jiti.import('../lib/rpc-manager.ts');
+const {createCapabilityTools}=await jiti.import('../lib/context-capabilities/runtime.ts');
+const {defaultPolicy}=await jiti.import('../lib/context-capabilities/policy.ts');
+const {createManagedSystemPromptExtension}=await jiti.import('../lib/exact-system-prompt.ts');
+const {createLocalPrefixObserver}=await jiti.import('../lib/local-prefix-observer.ts');
+const out=process.env.PI_CACHE_ACCEPTANCE_OUTPUT;if(!out)throw Error('Evidence directory required');
+const {data:models}=await(await fetch('http://127.0.0.1:12349/v1/models')).json();
+const id='Qwen3.8-Flash-Next-Sushi-4bpw';assert.ok(models.find(m=>m.id===id&&m.loaded),'Existing Flash must already be loaded; no model switching');
+execFileSync('pgrep',['-x','VoiceOver']);
+const dir=await mkdtemp(join(tmpdir(),'pi-mcp-live-'));const agentDir=join(dir,'agent');await mkdir(agentDir);
+const fixture=join(root,'lib/__fixtures__/mcp-env-server.mjs');
+await writeFile(join(agentDir,'mcp.json'),JSON.stringify({mcpServers:{cachefixture:{command:process.execPath,args:[fixture],exposure:'codemode',description:'Fixture tools for a local cache acceptance test'}}}));
+const runtime=await ModelRuntime.create({modelsPath:join(homedir(),'.pi/agent/models.json'),authPath:join(homedir(),'.pi/agent/auth.json'),refreshOnCreate:false});
+const model=runtime.getModel('mac-local-unified',id);assert.ok(model);
+const policy=defaultPolicy();for(const k in policy.enabled)policy.enabled[k]=k==='mcp';
+const record={policy,prompt:'You are running a local acceptance test. Follow the user instructions exactly. Use only the requested fixture tools. Reply briefly in Chinese.',components:[],createdAt:'live-fixture'};
+const requests=[];let wrapper,session;
+const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const builtins=await createPiWebBuiltinExtensions({agentDir,stableToolPrefix:true,mcpHost:{idleMs:300,promptWaitMs:5000}});
+const loader=new DefaultResourceLoader({cwd:dir,agentDir,settingsManager:SettingsManager.inMemory({}),noSkills:true,noContextFiles:true,noThemes:true,noPromptTemplates:true,extensionFactories:[...builtins.extensions,createCapabilityTools(record,dir,()=>[]),createManagedSystemPromptExtension(()=>record.prompt,s=>record.pluginPrompt??(record.pluginPrompt=s)),{name:'live-prefix-evidence',factory:pi=>pi.on('before_provider_request',e=>{const b=e.payload;const messageHashes=b.messages?.map(digest)??[];const previous=requests.at(-1)?.messageHashes;requests.push({at:new Date().toISOString(),toolsHash:digest(b.tools),tools:(b.tools??[]).map(t=>({name:t.function?.name??t.name,descriptionHash:digest(t.function?.description??t.description),schemaHash:digest(t.function?.parameters??t.parameters)})),systemHash:digest(b.messages?.filter(m=>m.role==='system'||m.role==='developer')),roles:b.messages?.map(m=>m.role),messageCount:b.messages?.length,messageHashes,priorMessagesUnchanged:!previous||previous.every((h,i)=>h===messageHashes[i])});})},createLocalPrefixObserver('acceptance-'+randomUUID())]});
+await loader.reload();
+try{
+ ({session}=await createAgentSession({cwd:dir,agentDir,modelRuntime:runtime,model:{...model,maxTokens:512},resourceLoader:loader,sessionManager:SessionManager.inMemory(dir),settingsManager:SettingsManager.inMemory({})}));
+ session.setThinkingLevel('off');wrapper=new AgentSessionWrapper(session,{mcpHost:builtins.mcpHost});wrapper.beginExtensionBinding();await wrapper.waitUntilReady();
+ const marker='cache-fixture-'+randomUUID();
+ let rounds=0;const unsub=session.subscribe(e=>{if(e.type==='turn_end'&&++rounds>14)void session.abort();});
+ async function send(text){await wrapper.send({type:'prompt',message:text});for(let i=0;i<1800&&wrapper.isRunning();i++)await delay(100);assert.ok(!wrapper.isRunning(),'Own acceptance request exceeded 180 seconds');}
+ await send(marker+' 请使用mcp_discover找到mcp__cachefixture__env_has，并传enable列表；再用mcp_call调用它，参数name为LANG。最后简短报告结果。');
+ await delay(800);
+ await send('请使用tool_search搜索env_has，然后用tool_search的call字段调用mcp__cachefixture__env_has，参数name为LANG。最后简短报告结果。');
+ await send('现在通过codemode调用同一fixture工具，参数仍为LANG。不要调用任何其他工具。简短报告。');
+ await send('停止工具测试，回复完成二字。');unsub();
+ const messages=session.messages;const results=messages.filter(m=>m.role==='toolResult');const assistants=messages.filter(m=>m.role==='assistant');
+ const evidence={at:new Date().toISOString(),marker,requests,tools:results.map(r=>({name:r.toolName,isError:r.isError})),usage:assistants.map(m=>m.usage),voiceoverPid:execFileSync('pgrep',['-x','VoiceOver'],{encoding:'utf8'}).trim(),scope:'Real already-loaded Flash through source SDK + production stable discovery adapter, fixture MCP stdio; no user history persisted'};
+ await writeFile(join(out,'real-flash-cache-results.json'),JSON.stringify(evidence,null,2));
+ assert.ok(results.some(r=>r.toolName==='mcp_call'&&!r.isError),'No successful real mcp_call');
+ assert.ok(results.some(r=>r.toolName==='tool_search'&&!r.isError),'No successful real tool_search');
+ assert.ok(results.some(r=>r.toolName==='codemode'&&!r.isError),'No successful real codemode');
+ assert.equal(new Set(requests.map(r=>r.toolsHash)).size,1,'Actual provider tool prefix changed');
+ assert.equal(new Set(requests.map(r=>r.systemHash)).size,1,'Actual provider system prefix changed');
+ assert.ok(requests.every(r=>r.priorMessagesUnchanged),'Actual provider historical message prefix changed');
+ assert.ok(assistants.length>3);assert.ok(assistants.slice(1).every(m=>m.usage.cacheRead>0),'A continuation lost its real cache');
+ console.log('REAL_FLASH_MCP_PREFIX_PASSED',JSON.stringify(evidence.usage.map(u=>({input:u.input,cacheRead:u.cacheRead,output:u.output}))));
+}finally{wrapper?.destroy();await delay(200);await rm(dir,{recursive:true,force:true});}

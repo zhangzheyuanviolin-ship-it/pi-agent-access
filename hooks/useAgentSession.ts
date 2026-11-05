@@ -17,7 +17,7 @@ import { attachmentAwareTitle } from "@/lib/chat-attachments";
 import { isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import { mergeComposerQueueSnapshot, type ComposerQueueActionResult, type PendingComposerMessage } from "@/lib/composer-queue-types";
 import { isRemoteHTTP } from "@/lib/remote-http";
-import { fetchWithRetry } from "@/lib/fetch-timeout";
+import { fetchWithDeadline, fetchWithRetry } from "@/lib/fetch-timeout";
 import type { ModelScopeWarning } from "@/lib/model-scope-warnings";
 import { rememberScrollPosition, sessionScrollTops } from "@/lib/scroll-memory";
 import {
@@ -866,7 +866,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!includeState) return null;
 
       try {
-        const stateRes = await fetch(`/api/sessions/${encodeURIComponent(sid)}/state`);
+        const stateRes = await fetchWithRetry(`/api/sessions/${encodeURIComponent(sid)}/state`);
         if (!stateRes.ok) throw new Error(`HTTP ${stateRes.status}`);
         const agentState = await stateRes.json() as { running: boolean; state?: AgentStateResponse };
         if (!isCurrent()) return null;
@@ -919,7 +919,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (before) params.set("before", before);
       if (options?.tail) params.set("tail", String(options.tail));
       const url = `/api/sessions/${encodeURIComponent(sid)}/context?${params}`;
-      const res = await fetch(url, { signal: options?.signal });
+      const res = await fetchWithRetry(url, { init: { signal: options?.signal } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as { context: SessionData["context"] };
       if (!sessionHookMountedRef.current) return false;
@@ -1197,7 +1197,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (disposed || renewing) return;
       renewing = true;
       try {
-        const response = await fetch(`/api/agent/${encodeURIComponent(sid)}/lease`, {
+        const response = await fetchWithDeadline(`/api/agent/${encodeURIComponent(sid)}/lease`, 6000, {
           method: "POST",
           cache: "no-store",
         });
@@ -1237,15 +1237,22 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const suspend = () => { eventConnectionRef.current?.close(); };
     const visible = () => {
       if (document.visibilityState === "hidden") suspend();
-      else if (sessionIdRef.current) maintainEventsConnected(sessionIdRef.current);
+      else if (sessionIdRef.current) {
+        // iOS may resume an EventSource that still reports OPEN after its TCP
+        // path disappeared. Recreate it; maintaining that stale object is a no-op.
+        eventConnectionRef.current?.close();
+        maintainEventsConnected(sessionIdRef.current);
+      }
     };
     document.addEventListener("visibilitychange", visible);
     window.addEventListener("pagehide", suspend);
     window.addEventListener("pageshow", visible);
+    window.addEventListener("online", visible);
     return () => {
       document.removeEventListener("visibilitychange", visible);
       window.removeEventListener("pagehide", suspend);
       window.removeEventListener("pageshow", visible);
+      window.removeEventListener("online", visible);
     };
   }, [maintainEventsConnected]);
 
@@ -1381,7 +1388,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ) return;
 
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+        const res = await fetchWithRetry(`/api/agent/${encodeURIComponent(sid)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
         if (
@@ -1457,7 +1464,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     while (agentRunningRef.current && Date.now() - startedAt < PROMPT_SETTLE_MAX_MS) {
       if (runId !== undefined && promptRunIdRef.current !== runId) return;
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+        const res = await fetchWithRetry(`/api/agent/${encodeURIComponent(sid)}`);
         if (res.ok) {
           const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
           const state = data.state;
@@ -1485,7 +1492,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     ) {
       await delay(BASH_STATE_RECONCILE_MS);
       try {
-        const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+        const res = await fetchWithRetry(`/api/agent/${encodeURIComponent(sid)}`);
         if (!res.ok) continue;
         const data = await res.json() as { state?: AgentStateResponse };
         syncLiveModel(data.state);
@@ -1513,7 +1520,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sessionGeneration = sessionGenerationRef.current;
     const runId = promptRunIdRef.current;
     try {
-      const res = await fetch(`/api/agent/${encodeURIComponent(sid)}`);
+      const res = await fetchWithRetry(`/api/agent/${encodeURIComponent(sid)}`);
       if (!res.ok) return;
       const data = await res.json() as { running?: boolean; state?: AgentStateResponse };
       // A slow response can straddle a run boundary (previous run finished
@@ -1630,7 +1637,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const runId = promptRunIdRef.current;
           if (!sid) break;
           loadSession(sid);
-          fetch(`/api/agent/${encodeURIComponent(sid)}`)
+          fetchWithRetry(`/api/agent/${encodeURIComponent(sid)}`)
             .then((r) => r.json())
             .then((d: { state?: AgentStateResponse }) => {
               if (
@@ -2250,7 +2257,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const modelsUrl = modelCwd ? `/api/models?cwd=${encodeURIComponent(modelCwd)}` : "/api/models";
     let d: ModelsResponse;
     try {
-      const res = await fetch(modelsUrl, signal ? { signal } : undefined);
+      const res = await fetchWithRetry(modelsUrl, { init: { signal, cache: "no-store" } });
       if (!res.ok) {
         let detail = "";
         try {

@@ -36,7 +36,15 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     ".next-desktop/types/**/*.ts",
-    ".next-desktop/dev/types/**/*.ts"
+    ".next-desktop/dev/types/**/*.ts",
+    ".next-mcp-cache-hotfix/types/**/*.ts",
+    ".next-mcp-cache-hotfix/dev/types/**/*.ts",
+    ".next-omni-integration/types/**/*.ts",
+    ".next-omni-integration/dev/types/**/*.ts",
+    ".next-omni-qwen/types/**/*.ts",
+    ".next-omni-qwen/dev/types/**/*.ts",
+    ".next-infrastructure/types/**/*.ts",
+    ".next-infrastructure/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

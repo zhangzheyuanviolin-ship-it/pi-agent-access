@@ -18,6 +18,7 @@ import { createPiWebMcpTransportFactory } from "./mcp-transport";
 import { loadPiSdkInternals, type PiSdkInternals, type PiSdkInternalsResult } from "./pi-sdk-internals";
 import { mayReadProjectConfigNow } from "./project-trust";
 import { PROJECT_SETTINGS_MAX_BYTES, readRegularFileText } from "./regular-file";
+import {stableCodemodeDescription,stableMcpDeclarations,stableToolSearch} from './stable-tool-discovery';
 
 // The built-in extensions the pi CLI prepends from a module the SDK does not
 // export (ADR 0006, "Loading"). Normal sessions load them under the CLI's
@@ -345,6 +346,8 @@ function builtin(name: string, factory: ExtensionFactory): InlineExtension {
 
 export interface PiWebBuiltinExtensionsOptions {
   agentDir: string;
+  /** Production Pi sessions use fixed discovery facades instead of schema promotion. */
+  stableToolPrefix?: boolean;
   /** Timing overrides for tests. */
   mcpHost?: Pick<McpHostOptions, "idleMs" | "promptWaitMs">;
 }
@@ -370,12 +373,12 @@ export async function createPiWebBuiltinExtensions(
       })
     : undefined;
   const extensions = [
-    builtin("codemode", sandbox.available ? createCodemodeExtension() : unavailableExtension),
-    builtin("tool-search", createToolSearchExtension()),
+    builtin("codemode", sandbox.available ? (options.stableToolPrefix?stableCodemodeDescription(createCodemodeExtension()):createCodemodeExtension()) : unavailableExtension),
+    builtin("tool-search", options.stableToolPrefix?stableToolSearch:createToolSearchExtension()),
     builtin(
       "mcp",
       mcp.available && mcpHost
-        ? createMcpExtension({
+        ? (options.stableToolPrefix?stableMcpDeclarations:(factory:ExtensionFactory)=>factory)(createMcpExtension({
             loadConfig: createMcpExtensionConfigLoader(mcp.internals, options.agentDir),
             createTransport: mcpHost.wrapTransportFactory(createPiWebMcpTransportFactory(mcp.internals)),
             // The host already waited, and Stop ends its wait. The extension's own wait for
@@ -384,7 +387,7 @@ export async function createPiWebBuiltinExtensions(
             // `/mcp login` already shows the address in the chat; a browser
             // opened on the server host is one a remote user never sees.
             openUrl: () => {},
-          })
+          }))
         : unavailableExtension,
     ),
   ];

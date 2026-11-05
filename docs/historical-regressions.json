@@ -1,0 +1,394 @@
+{
+  "version": 1,
+  "severity": "S0",
+  "incident": "S0-PREFIX-20261105",
+  "scope": "Every activation, including hotfix, rollback and shared backend directory switch",
+  "discoveryInventory": "/Users/zhangzheyuan/Projects/Accessible-Agent/continuity/S0-PREFIX-20261105/历史文档全文检索索引.json",
+  "reviewStatus": "current-stack historical failure classes reviewed; retired alternate backends must not be re-enabled from archives",
+  "regressions": [
+    {
+      "id": "P01",
+      "requirement": "普通新指令、任务结束与资源reload保持固定系统/项目/插件快照",
+      "test": "lib/context-capabilities/managed.integration.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Pi-Cache-Audit-20261029",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P02",
+      "requirement": "日期、记忆写入、技能与项目文件变化不重写旧快照",
+      "test": "lib/context-capabilities/managed.integration.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Pi-Cache-Audit-20261029",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P03",
+      "requirement": "附件完成仅一次追加新user，失败不宣布完成",
+      "test": "lib/received-attachments.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Pi-Web-Loading-Recovery-20261029",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P04",
+      "requirement": "MCP断连重连的mcp_servers说明冻结且持久恢复",
+      "test": "lib/mcp-cache-stability.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Pi-Live-Latency-Audit-20261030",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P05",
+      "requirement": "mcp_discover enable不promote动态工具，固定mcp_call保留",
+      "test": "lib/context-capabilities/mcp-prefix.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Omni-Acceptance-20261104/mcp-cache-audit",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P06",
+      "requirement": "tool_search搜索调用不提升工具schema",
+      "test": "lib/stable-tool-discovery.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Omni-Acceptance-20261104/mcp-cache-audit",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P07",
+      "requirement": "codemode延迟连接与动态目录不改头部工具说明",
+      "test": "lib/stable-tool-discovery.integration.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Omni-Acceptance-20261104/mcp-cache-audit",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P08",
+      "requirement": "六服务三暴露模式、隐藏权限、取消仍走SDK",
+      "test": "lib/mcp-host.integration.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Omni-Acceptance-20261104/mcp-cache-audit",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P09",
+      "requirement": "完整HTTP tools/system/developer/旧messages校验且诊断不阻断任务",
+      "test": "lib/local-prefix-observer.integration.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Omni-Acceptance-20261104/mcp-cache-audit",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P10",
+      "requirement": "不在模型请求关键路径执行全历史双分词审计",
+      "test": "lib/context-capabilities/request-audit.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Omni-Acceptance-20261104/mcp-cache-audit",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P11",
+      "requirement": "部署路径变化及会话进程重建保持原工具顺序与文档地址",
+      "test": "lib/stable-request-tools.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "S0-PREFIX-20261105",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P12",
+      "requirement": "混合模型检查点真实缓存数与matched区分，不伪造全命中",
+      "test": "lib/cache-warming-display.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Pi-Live-Latency-Audit-20261030",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P13",
+      "requirement": "空闲TTL关闭但保留容量淘汰，真实间隔续聊",
+      "test": "lib/context-capabilities/managed.integration.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Accessible-Agent/continuity/阶段进展追加记录.txt",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P14",
+      "requirement": "模型切换及进程恢复从原SSD恢复长前缀",
+      "test": "lib/stable-request-tools.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Tailscale-TSNET-Sushi-Bridge/缓存重算根因核查报告.txt",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P15",
+      "requirement": "显式能力刷新、改历史与压缩保留真实语义和权限变化",
+      "test": "lib/context-capabilities/managed.integration.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "Pi-Cache-Audit-20261029",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P16",
+      "requirement": "DeepSeek冷启动重复加载与资源边界不牺牲旁白内存",
+      "test": "/Users/zhangzheyuan/LocalAI/Tailscale-TSNET-Sushi-Bridge/scripts/test_gpu_admission.py",
+      "group": "prefix",
+      "historicalEvidence": "DeepSeek-V4.1-Diagnostic-Round2-20261031-222655",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C01",
+      "requirement": "电脑应用名歧义不误判缺安装，不猜坐标倍数",
+      "test": "computer-use/action-guidance.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Pi-Computer-Use-Repair-20261102",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C02",
+      "requirement": "noWindows精确失败每轮一次重置，绝不重放动作",
+      "test": "computer-use/window-recovery.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Pi-Computer-Use-Repair-20261102",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C03",
+      "requirement": "浏览器Pi身份环境隔离，保留宿主权限和VPN配置",
+      "test": "computer-use/runtime-environment.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Pi-Computer-Use-Repair-20261102",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C04",
+      "requirement": "原生浏览器host注册真实发现，不以列表注册冒充可用",
+      "test": "computer-use/browser-registration.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Accessible-Agent/continuity/阶段进展追加记录.txt",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C05",
+      "requirement": "首次AX完整、后续无损差量，不污染工具声明",
+      "test": "computer-use/observation-diff.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Computer-Use-Design-Audit-20261104",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C06",
+      "requirement": "截图字节尺寸与坐标映射边界，不凭半倍双倍猜测",
+      "test": "computer-use/image-frame.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Computer-Use-Design-Audit-20261104",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C07",
+      "requirement": "巨量工具输出落盘分页，数字键枚举压缩，图像和isError保留",
+      "test": "computer-use/paged-text.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Computer-Use-Design-Audit-20261104",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C08",
+      "requirement": "真实hover/分页/跨轮标签及翻页回读、动作已发与结果确认分开",
+      "test": "computer-use/browser-enhancements.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Computer-Use-Design-Audit-20261104",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C09",
+      "requirement": "电脑动作目标核验不自动重复点击，原生键盘/滚动",
+      "test": "computer-use/native-enhancements.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Computer-Use-Design-Audit-20261104",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "V01",
+      "requirement": "27B原生视频五类会话自动加载，无额外工具开关",
+      "test": "lib/video-autoload.test.mjs",
+      "group": "video",
+      "historicalEvidence": "Pi-Native-Video-Repair-20261102",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "V02",
+      "requirement": "read视频走当前型号原生video_url，不当文本不冒充外部视觉",
+      "test": "lib/video-analysis.test.mjs",
+      "group": "video",
+      "historicalEvidence": "Pi-Native-Video-Repair-20261102",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "V03",
+      "requirement": "只读权限与纯聊天仅用户明确路径，时长真实回传",
+      "test": "lib/video-analysis.test.mjs",
+      "group": "video",
+      "historicalEvidence": "Pi-Native-Video-Repair-20261102",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "V04",
+      "requirement": "桌面与手机附件真实上传视频并原生分析，后续缓存保持",
+      "test": "lib/chat-attachments.test.mjs",
+      "group": "video",
+      "historicalEvidence": "Qwen3.8-27B-oQ8e-fp16-mtp-Acceptance-20261103",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M01",
+      "requirement": "HTTP1.1 SSE连接配额不阻塞列表/历史，前后台暂停释放",
+      "test": "hooks/useAgentSession.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "Pi-Web-Loading-Recovery-20261029",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M02",
+      "requirement": "网络变化不退出桥接，辅助接口地址/DAD轮换不误停服",
+      "test": "/Users/zhangzheyuan/LocalAI/Tailscale-TSNET-Sushi-Bridge/scripts/test_network_guard.py",
+      "group": "mobile",
+      "historicalEvidence": "Tailscale-TSNET-Sushi-Bridge/evidence/iphone-second-failure-20261028-122632",
+      "requiresLiveEvidence": true,
+      "additionalTests": [
+        "/Users/zhangzheyuan/LocalAI/Tailscale-TSNET-Sushi-Bridge/scripts/test_resilient_supervisor.py"
+      ]
+    },
+    {
+      "id": "M03",
+      "requirement": "共享桌面手机同一后端，代理超时保留真实后台任务",
+      "test": "hooks/useAgentSession.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "Tailscale-TSNET-Sushi-Bridge/evidence/mobile-fixes-20261028-2145",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M04",
+      "requirement": "完整包HTML引用JS/CSS/字体均成功，无buildDir错位",
+      "test": "scripts/release-components.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "Accessible-Agent/continuity/阶段进展追加记录.txt",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M05",
+      "requirement": "有限读取重试覆盖响应体，写操作不自动重发",
+      "test": "lib/fetch-timeout.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "Accessible-Agent/continuity/infrastructure-20261105",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M06",
+      "requirement": "首页恢复summary/工作区，列表故障恢复不丢待恢复会话",
+      "test": "components/AppShell.workspace-memory.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "Accessible-Agent/continuity/infrastructure-20261105",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M07",
+      "requirement": "pageshow/online强制重建半断EventSource并恢复模型历史控件",
+      "test": "hooks/useAgentSession.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "Accessible-Agent/continuity/infrastructure-20261105",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "R01",
+      "requirement": "工作记忆跨cwd共享、日期及语义词检索，项目隔离仍有效",
+      "test": "lib/workspace-memory.test.mjs",
+      "group": "memory",
+      "historicalEvidence": "Accessible-Agent/continuity/infrastructure-20261105",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "R02",
+      "requirement": "网关计时/异常清理锁释放、429和取消不等同缓存失败",
+      "test": "/Users/zhangzheyuan/LocalAI/Tailscale-TSNET-Sushi-Bridge/scripts/test_model_gateway.py",
+      "group": "runtime",
+      "historicalEvidence": "Pi-Live-Latency-Audit-20261030",
+      "requiresLiveEvidence": true,
+      "additionalTests": [
+        "/Users/zhangzheyuan/LocalAI/Tailscale-TSNET-Sushi-Bridge/scripts/test_gateway_cancel.py",
+        "/Users/zhangzheyuan/LocalAI/Tailscale-TSNET-Sushi-Bridge/scripts/test_gateway_done.py"
+      ]
+    },
+    {
+      "id": "R03",
+      "requirement": "候选与实际安装包绑定，不允许整文件HEAD覆盖当前已验证修复",
+      "test": "scripts/verify-access-release-gate.test.mjs",
+      "group": "release",
+      "historicalEvidence": "S0-PREFIX-20261105",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "P17",
+      "requirement": "MLTF含图SSD上游限制不得误报修复，缓存媒体身份/格式分开验证",
+      "test": "lib/image-attachments.test.mjs",
+      "group": "prefix",
+      "historicalEvidence": "docs/mltf-image-ssd-limit.md",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M08",
+      "requirement": "手机默认中文、可读错误和模型速度用实际新增词元，不拿总输入除时间",
+      "test": "lib/cache-warming-display.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "mobile-fixes-20261028-2145",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M09",
+      "requirement": "上传断线续传、发布下载完整性和稳定附件路径",
+      "test": "lib/session-transfers.test.mjs",
+      "group": "mobile",
+      "historicalEvidence": "Pi-Web-Loading-Recovery-20261029",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "V05",
+      "requirement": "视频异步读取、心跳进度、取消和损坏文件真实拒绝",
+      "test": "lib/video-analysis.test.mjs",
+      "group": "video",
+      "historicalEvidence": "Pi-Video-Global-Cleanup-20261101",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C10",
+      "requirement": "固定自有运行根、缺失上游App仍可用、越界pin拒绝",
+      "test": "computer-use/runtime-environment.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Pi-Computer-Use-Repair-20261102",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C11",
+      "requirement": "中文混排换行与增量追加，不跨会话复用过期元素ID",
+      "test": "computer-use/native-enhancements.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "Accessible-Agent/diagnostics/20261023-dual-model-cu",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C12",
+      "requirement": "电脑增强仅在外部REPL绑定对象，签名资源逐字不变；官方浏览器连接器安装与签名校验成功；禁止原始模板占位符直接部署",
+      "test": "computer-use/runtime-overlay.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "S0-PREFIX-20261105/pinned-signature-before.log",
+      "requiresLiveEvidence": true
+    }
+  ],
+  "reviewScope": {
+    "searchMatchedDocuments": 1342,
+    "prioritizedReports": 149,
+    "currentStackCoreReports": 18,
+    "faultClausesReviewed": 91,
+    "gitCommitsReviewed": 17,
+    "unverifiedHistoricalClaims": "preserved and explicitly distinguished from current regressions; no universal UI/model correctness guarantee",
+    "retiredBackends": "Hermes/amaster/injaneity/Peekaboo/MTPLX and deleted Orca are historical candidates, not current production; never restore their old fixes as current code"
+  }
+}

@@ -84,10 +84,17 @@ test("npm test covers every test directory, recursively", async () => {
 
 test("no test file is left out of npm test", async () => {
   // Catches a test added in a directory the globs do not cover.
-  const { execFileSync } = await import("node:child_process");
-  const tracked = execFileSync("git", ["ls-files", "*.test.mjs"], { cwd: root, encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean);
+  const { readdir } = await import("node:fs/promises");
+  async function testsIn(dir, prefix = "") {
+    const out=[];
+    for(const entry of await readdir(dir,{withFileTypes:true})){
+      if(entry.name==='node_modules'||entry.name==='.git'||entry.name.startsWith('.next'))continue;
+      const name=prefix+entry.name;
+      if(entry.isDirectory())out.push(...await testsIn(join(dir,entry.name),name+'/'));
+      else if(entry.isFile()&&name.endsWith('.test.mjs'))out.push(name);
+    }return out;
+  }
+  const tracked = await testsIn(root);
 
   const covered = tracked.filter((file) => /^(app|lib|scripts|components|hooks|public|computer-use)\//.test(file));
   assert.deepEqual(

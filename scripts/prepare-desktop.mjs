@@ -2,18 +2,22 @@ import { access, chmod, copyFile, cp, mkdir, readdir, rm, writeFile } from "node
 import { constants } from "node:fs";
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { desktopTargetTriple } from "./desktop-platform.mjs";
 import { piPackageDirNames } from "./pi-packages.mjs";
 import { dedupeNestedPackages, externalPackageSpecifiers, findNestedPiScopePackages, stageCompletePackage, stageResolvedClosure } from "./stage-package.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
-const desktopBuildDir = join(rootDir, ".next-desktop");
+const desktopBuildDir = resolve(rootDir, process.env.PI_WEB_BUILD_DIR || ".next-desktop");
 const standaloneDir = join(desktopBuildDir, "standalone");
-const serverResourcesDir = join(rootDir, "src-tauri", "resources", "server");
-const serverHelperDir = join(rootDir, "src-tauri", "resources", "Pi Agent Server.app");
-const nodeResourcesDir = join(rootDir, "src-tauri", "resources", "node");
+// Stage a hotfix away from the running server; normal packaging keeps its path.
+const resourcesRoot = process.env.PI_WEB_STAGE_ROOT
+  ? resolve(process.env.PI_WEB_STAGE_ROOT)
+  : join(rootDir, "src-tauri", "resources");
+const serverResourcesDir = join(resourcesRoot, "server");
+const serverHelperDir = join(resourcesRoot, "Pi Agent Server.app");
+const nodeResourcesDir = join(resourcesRoot, "node");
 
 async function runNextBuild() {
   const require = createRequire(import.meta.url);
@@ -173,7 +177,7 @@ async function assembleServer() {
   await writeFile(externalNodeLink,'LCU_EXTERNAL_NODE_LINK_PLACEHOLDER\n');
 
   const staticSource = join(desktopBuildDir, "static");
-  const staticDestination = join(serverResourcesDir, ".next-desktop", "static");
+  const staticDestination = join(serverResourcesDir, relative(rootDir, desktopBuildDir), "static");
   await mkdir(dirname(staticDestination), { recursive: true });
   await cp(staticSource, staticDestination, { recursive: true });
 

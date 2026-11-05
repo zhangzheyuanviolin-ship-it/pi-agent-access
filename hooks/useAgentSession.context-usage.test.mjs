@@ -41,7 +41,7 @@ function harness({ response, stats, pending } = {}) {
   };
   const globals = {
     ...refs,
-    fetch: async () => ({ ok: true, json: async () => pending ? await pending : response }),
+    fetchWithRetry: async () => ({ ok: true, json: async () => pending ? await pending : response }),
     sendAgentCommand: async () => pending ? await pending : stats,
     encodeURIComponent,
     syncLiveModel() {},

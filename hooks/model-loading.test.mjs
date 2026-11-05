@@ -38,7 +38,7 @@ function setup(fetchImpl) {
     sessionIdRef: { current: null }, thinkingLevelOverrideRef: { current: null },
     thinkingLevelPinsRef: { current: {} }, defaultThinkingLevelRef: { current: null },
     asConcreteThinkingLevel: (value) => (!value || value === "auto" ? null : value),
-    fetch: fetchImpl,
+    fetch: fetchImpl, fetchWithRetry: (url, options) => fetchImpl(url, options?.init ?? {}),
     MODELS_RETRY_DELAYS_MS: script(schedule.initializer.getText(source)).runInNewContext(),
     delay: async (ms) => { delays.push(ms); },
   };

@@ -170,6 +170,7 @@ function buildComponents(
       return <>{children}</>;
     },
     a({ href, children, ...props }) {
+      if(href && /^\/api\/local-omni\/audio\/[a-f0-9]{32}\.wav$/.test(href))return <span><audio controls preload="none" src={href} aria-label="模型语音回复"/><a href={href} download aria-label="下载模型语音回复">下载语音</a></span>;
       // `node` is react-markdown metadata, not a DOM attribute.
       delete props.node;
       if (href && /^\/api\/outputs\/[a-f0-9-]{36}$/.test(href)) {

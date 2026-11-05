@@ -18,6 +18,13 @@ export function createObservationDiff({directory=join(process.env.PI_CODING_AGEN
     if(body.length<threshold||!/^\d+ AXWebArea\b/m.test(body)){out+=segment;continue;}
     const key=header.trim(),old=prior.get(key);let file;
     try{const folder=join(directory,digest(sessionId).slice(0,24));mkdirSync(folder,{recursive:true,mode:0o700});file=join(folder,digest(callId+key+body+'-'+i)+'.txt');writeFileSync(file,segment,{mode:0o600,flag:'wx'});}catch{out+=segment;continue;}
+    if(body.length>24000){
+     // The model never saw this full baseline: do not emit future diffs against it.
+     prior.delete(key);
+     const preview=body.slice(0,18000)+'\n（中间结构未自动展开）\n'+body.slice(-4000);
+     out+=header+preview+tail+'\nLCU分段观察：完整结构共'+body.length+'字符，已原样保存：'+file+'。以上仅为首尾预览，不代表完整页面。需要其他控件或正文时，优先用当前tab的定位器或playwright.evaluate查询目标并只返回所需字段；也可通过文件读取工具按范围读取此完整文件。不要猜测未展示的元素编号。\n';
+     deltas.push({key,file,preview:true,fullChars:body.length});changed=true;continue;
+    }
     prior.delete(key);prior.set(key,body);while(prior.size>8)prior.delete(prior.keys().next().value);
     if(old!==undefined){const patch=linePatch(old,body);const note='LCU browser AX无损增量：相对本轮该标签上一次结构，保留前'+patch.prefix+'行和后'+patch.suffix+'行，将中间'+patch.removed+'行替换为以下'+patch.insert.length+'行。未列出的内容不变，元素编号仍按最新结构使用；坐标操作仍需新截图。\n'+(patch.insert.length?patch.insert.join('\n'):'（页面结构未变）')+'\n完整最新观察：'+file+'\n';
      if(note.length<body.length*.75){out+=header+note+tail;deltas.push({key,file,...patch});changed=true;continue;}

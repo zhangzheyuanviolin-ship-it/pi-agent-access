@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchWithRetry } from "@/lib/fetch-timeout";
+
 
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -176,7 +178,7 @@ export function AppShell() {
   // a chat URL or restored blank composer is classified on the first render.
   useEffect(() => {
     const controller = new AbortController();
-    void fetch("/api/chat-workspace", { cache: "no-store", signal: controller.signal })
+    void fetchWithRetry("/api/chat-workspace", { init: { cache: "no-store", signal: controller.signal } })
       .then((response) => response.ok ? response.json() as Promise<{ cwd?: string }> : null)
       .then((data) => {
         if (data?.cwd) setChatWorkspaceCwd(data.cwd);
@@ -829,6 +831,7 @@ export function AppShell() {
   // Guards the async workspace restore so a slow response from an earlier
   // switch cannot resurrect a session into a project the user already left.
   const workspaceRestoreTokenRef = useRef(0);
+  const pendingWorkspaceRestoreRef = useRef<{projectKey:string;cwd:string;token:number}|null>(null);
 
   const invalidateWorkspaceRestore = useCallback(() => {
     workspaceRestoreTokenRef.current += 1;
@@ -910,8 +913,10 @@ export function AppShell() {
     const token = ++workspaceRestoreTokenRef.current;
     const lastOpenSessionId = getLastOpenSession(projectKey);
     if (!lastOpenSessionId) return;
+    pendingWorkspaceRestoreRef.current = {projectKey,cwd,token};
     const adopt = (d: { sessions: SessionInfo[] } | null) => {
       if (token !== workspaceRestoreTokenRef.current) return; // stale switch
+      if (d) pendingWorkspaceRestoreRef.current = null;
       const s = d?.sessions.find((x) => x.id === lastOpenSessionId);
       if (!s) {
         // The list loaded but the remembered session is gone — forget it.
@@ -952,13 +957,22 @@ export function AppShell() {
       adopt({ sessions: sessionCatalog });
       return;
     }
-    void fetch("/api/sessions")
+    void fetchWithRetry("/api/sessions?summary=1", { init: { cache: "no-store" } })
       .then((r) => (r.ok ? (r.json() as Promise<{ sessions: SessionInfo[] }>) : null))
       .then(adopt)
       .catch(() => {
         // Network hiccup: keep the remembered session for a later retry.
       });
   }, [router, sessionCatalog]);
+
+  // If the independent restore request failed, the recovered sidebar catalogue
+  // completes it without a manual workspace switch. Explicit navigation wins.
+  useEffect(() => {
+    const pending = pendingWorkspaceRestoreRef.current;
+    if (sessionCatalog.length && pending && pending.token === workspaceRestoreTokenRef.current) {
+      restoreWorkspaceContext(pending.projectKey, pending.cwd);
+    }
+  }, [sessionCatalog, restoreWorkspaceContext]);
 
   const handleCwdChange = useCallback((
     cwd: string | null,

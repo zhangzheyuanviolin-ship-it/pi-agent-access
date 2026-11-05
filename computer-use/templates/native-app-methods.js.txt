@@ -1,0 +1,22 @@
+async inspectAX({id,query='',offset=0,limit=20,maxChars=4000}={}){
+ if((id!==undefined&&typeof id!=='string')||typeof query!=='string'||!Number.isInteger(offset)||offset<0||!Number.isInteger(limit)||limit<1||limit>100||!Number.isInteger(maxChars)||maxChars<300||maxChars>12000)throw new Error('Invalid bounded AX query');
+ const state=await this.getAXState({emit:false,disableDiffing:true}),lines=state.split('\n');const matches=[];
+ const pattern=id===undefined?null:new RegExp('ID: '+id.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?:,|$)');
+ for(let i=0;i<lines.length;i++){const line=lines[i],m=line.match(/^\s*(\d+)\s+/);if(!m)continue;if(pattern?!pattern.test(line):query&&!line.toLowerCase().includes(query.toLowerCase()))continue;matches.push({i,elementIndex:Number(m[1])});}
+ let used=0;const items=[];let nextOffset=null;
+ for(let n=offset;n<matches.length;n++){if(items.length>=limit){nextOffset=n;break;}const{ i,elementIndex}=matches[n],depth=lines[i].match(/^\s*/)[0].length;let end=i+1;while(end<lines.length&&lines[end].match(/^\s*/)[0].length>depth)end++;
+  const subtree=lines.slice(i,end).join('\n'),remaining=maxChars-used;if(remaining<300){nextOffset=n;break;}const preview=subtree.slice(0,Math.min(remaining,2000));used+=preview.length;
+  const values=lines.slice(i+1,end).flatMap(line=>{const m=line.match(/^\s*\d+ (?:文本|text|static text) (.*)$/i);return m?[m[1]]:[]});
+  items.push({elementIndex,id:id??lines[i].split('ID: ')[1]?.split(',')[0],line:lines[i],subtree:preview,text:values.join('\n').slice(0,1500),partial:preview.length!==subtree.length||values.join('\n').length>1500});
+ }
+ return {matches:matches.length,items,nextOffset,snapshotOnly:true,note:'Element indices belong to this fresh snapshot; query stable ID again before a later action.'};
+},
+async getAXValue(id){id=this.normalizeAXId(id);const r=await this.inspectAX({id,limit:2});if(r.matches!==1||r.items.length!==1)throw new Error('AX ID must match exactly one current element');const item=r.items[0];return {id,elementIndex:item.elementIndex,text:item.text.replace(/[\u200e\u200f]/g,''),subtree:item.subtree,partial:item.partial};},
+async clickByAXId(id){id=this.normalizeAXId(id);const r=await this.inspectAX({id,limit:2});if(r.matches!==1||r.items.length!==1)throw new Error('AX ID must match exactly one current element; no click sent');await this.click(r.items[0].elementIndex);return {actionDispatched:true,id,elementIndex:r.items[0].elementIndex};},
+async waitForAXValue(id,expected,{timeoutMs=3000,intervalMs=80}={}){
+ if(typeof expected!=='string'||!Number.isFinite(timeoutMs)||timeoutMs<0||timeoutMs>10000||!Number.isFinite(intervalMs)||intervalMs<50||intervalMs>500)throw new Error('Invalid bounded AX verification');const started=Date.now();let actual;
+ do{actual=await this.getAXValue(id);if(!actual.partial&&actual.text===expected)return {matched:true,actual,elapsedMs:Date.now()-started};if(Date.now()-started>=timeoutMs)break;await new Promise(resolve=>setTimeout(resolve,intervalMs));}while(Date.now()-started<=timeoutMs);
+ return {matched:false,actual,elapsedMs:Date.now()-started};
+},
+
+normalizeAXId(id){if(id&&typeof id==='object'&&typeof id.id==='string')id=id.id;if(typeof id!=='string'||!id.trim())throw new Error('Expected string AX ID, e.g. getAXValue("StandardInputView"); {id:"StandardInputView"} also works. Numeric indices are not stable IDs; inspectAX({query:"..."}) returns item.id.');return id;},

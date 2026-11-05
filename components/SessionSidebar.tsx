@@ -563,9 +563,11 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const recover = () => {
       if (document.visibilityState === "visible") void loadSessions(false, false, true);
     };
+    window.addEventListener("pageshow", recover);
     window.addEventListener("online", recover);
     document.addEventListener("visibilitychange", recover);
     return () => {
+      window.removeEventListener("pageshow", recover);
       window.removeEventListener("online", recover);
       document.removeEventListener("visibilitychange", recover);
     };

@@ -22,18 +22,27 @@ export async function fetchWithDeadline(
 ): Promise<Response> {
   const controller = new AbortController();
   let timedOut = false;
+  const cancel = () => controller.abort(init.signal?.reason);
+  if (init.signal?.aborted) cancel();
+  else init.signal?.addEventListener("abort", cancel, { once: true });
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    // These helpers serve finite API responses. Keep the deadline through body
+    // download: receiving headers alone does not mean a suspended phone resumed.
+    if (!response.body || typeof response.arrayBuffer !== "function") return response;
+    const body = await response.arrayBuffer();
+    return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
   } catch (error) {
     // A bare AbortError reads as if the app cancelled the request on purpose.
     if (timedOut) throw new Error(`Request timed out after ${timeoutMs}ms`);
     throw error;
   } finally {
     clearTimeout(timer);
+    init.signal?.removeEventListener("abort", cancel);
   }
 }
 
@@ -66,9 +75,15 @@ export async function fetchWithRetry(
     shouldRetry,
   } = options;
   try {
-    return await fetchWithDeadline(url, timeoutMs, init);
+    const response = await fetchWithDeadline(url, timeoutMs, init);
+    if ([408, 429, 502, 503, 504].includes(response.status)
+        && ["GET", "HEAD"].includes((init.method ?? "GET").toUpperCase())
+        && !init.signal?.aborted && (!shouldRetry || shouldRetry())) {
+      return fetchWithDeadline(url, retryTimeoutMs, init);
+    }
+    return response;
   } catch (error) {
-    if (shouldRetry && !shouldRetry()) throw error;
+    if (init.signal?.aborted || !["GET", "HEAD"].includes((init.method ?? "GET").toUpperCase()) || (shouldRetry && !shouldRetry())) throw error;
     return fetchWithDeadline(url, retryTimeoutMs, init);
   }
 }

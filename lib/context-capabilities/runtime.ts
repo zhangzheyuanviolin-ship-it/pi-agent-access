@@ -1,14 +1,16 @@
+import {preserveRequestToolPrefix} from '../stable-request-tools';
 import {ARTIFACT_GUIDE} from '../artifact-guide-extension';
 import {isArtifactsPromptEnabled} from '../artifact-settings';
 import {pluginApproved} from './plugin-access';
 import {createHash} from 'node:crypto';
 import {readFileSync,realpathSync} from 'node:fs';
-import {basename} from 'node:path';
+import {basename,join} from 'node:path';
 import {Type} from '@earendil-works/pi-ai';
 import {DefaultPackageManager,DefaultResourceLoader,SettingsManager,getAgentDir,type InlineExtension} from '@earendil-works/pi-coding-agent';
 import {POLICY_ENTRY,allowedTool,type ContextPolicy,type PolicyRecord} from './policy';
-import {listMemory,saveMemory,searchMemory,memorySnapshot} from './memory';
+import {listMemory,saveMemory,searchMemory,memorySnapshot,memoryVisible} from './memory';
 import {mayReadProjectConfigNow} from '../project-trust';
+import {privateWrite,policyRoot} from './store';
 export type Inventory={plugins:{path:string;label:string;enabled:boolean;approved:boolean}[];skills:{name:string;filePath:string;description:string;enabled:boolean}[]};
 export async function inventory(cwd:string):Promise<Inventory>{
  const agentDir=getAgentDir();const settings=SettingsManager.create(cwd,agentDir);settings.setProjectTrusted(mayReadProjectConfigNow(cwd,agentDir));
@@ -29,17 +31,26 @@ export async function buildPolicyRecord(cwd:string,policy:ContextPolicy):Promise
  return {policy,prompt:blocks.map(x=>`<${x.id}>\n${x.text}\n</${x.id}>`).join('\n\n'),components:blocks.map(({id,label,source,text})=>({id,label,source,chars:text.length,digest:createHash('sha256').update(text).digest('hex')})),createdAt:new Date().toISOString()};
 }
 export function createCapabilityTools(record:PolicyRecord,cwd:string,getSkills:()=>{name:string;filePath:string}[]):Extract<InlineExtension,{factory:unknown}>{return {name:'pi-web-capability-tools',hidden:true,factory:pi=>{
+ preserveRequestToolPrefix(pi,record);
  const result=(value:unknown)=>({content:[{type:'text' as const,text:JSON.stringify(value)}],details:{}});
- if(record.policy.enabled.mcp)pi.registerTool({name:'mcp_discover',label:'查找MCP工具',description:'Find enabled MCP tools by query. Pass exact tool names in enable to declare them for subsequent calls. Other capability categories are never searched.',parameters:Type.Object({query:Type.Optional(Type.String()),enable:Type.Optional(Type.Array(Type.String(),{maxItems:8}))}),async execute(_id,args){
+ if(record.policy.enabled.mcp){
+ pi.registerTool({name:'mcp_call',label:'调用MCP工具',description:'Call an enabled MCP tool by exact name and JSON arguments. Find its schema with mcp_discover. Tool declarations stay fixed.',parameters:Type.Object({name:Type.String(),arguments:Type.Record(Type.String(),Type.Unknown())}),reachesTools:args=>typeof args.name==='string'?[args.name]:[],async execute(_id,args,signal,update,ctx){
+ const target=pi.getAllTools().find(t=>t.name===args.name&&(t.name.startsWith('mcp__')||t.sourceInfo.path==='builtin:mcp')&&t.exposure!=='hidden');
+ if(!target)throw Error('MCP工具不存在或未启用');
+ const outcome=await ctx.executeTool(args.name,args.arguments,{signal,onUpdate:update});
+ if(outcome.isError)throw Error(outcome.result.content.filter(x=>x.type==='text').map(x=>x.text).join('\n')||'MCP调用失败');
+ return outcome.result;
+ }});
+ pi.registerTool({name:'mcp_discover',label:'查找MCP工具',description:'Find enabled MCP tool names and schemas. Invoke with mcp_call or codemode. The optional enable list filters results without changing tool declarations.',parameters:Type.Object({query:Type.Optional(Type.String()),enable:Type.Optional(Type.Array(Type.String(),{maxItems:8}))}),reachesTools:()=> 'all',async execute(_id,args){
  const tools=pi.getAllTools().filter(t=>t.exposure!=='hidden'&&(t.name.startsWith('mcp__')||t.sourceInfo.path==='builtin:mcp'));
  const enable=args.enable??[];if(enable.some(name=>!tools.some(t=>t.name===name)))throw new Error('MCP工具不存在或未启用');
- if(enable.length)pi.setActiveTools([...new Set([...pi.getActiveTools(),...enable])]);
- const q=(args.query??'').toLowerCase();return result(tools.filter(t=>(t.name+' '+t.description).toLowerCase().includes(q)).slice(0,8).map(({name,description,parameters})=>({name,description,parameters})));}});
+ const q=(args.query??'').toLowerCase();return result(tools.filter(t=>(!enable.length||enable.includes(t.name))&&(t.name+' '+t.description).toLowerCase().includes(q)).slice(0,8).map(({name,description,parameters})=>({name,description,parameters})));}});
+ }
  if(record.policy.enabled.skills)pi.registerTool({name:'skill_load',label:'读取技能',description:'Read an enabled skill by name. Returns instructions; missing capabilities remain disabled.',parameters:Type.Object({name:Type.String()}),async execute(_id,args){const skill=getSkills().find(s=>s.name===args.name&&!record.policy.disabledSkills.includes(s.filePath));if(!skill)throw new Error('技能未启用');const text=readFileSync(realpathSync(skill.filePath),'utf8');if(text.length>64000)throw new Error('技能过长，请在设置查看');return result({name:skill.name,path:skill.filePath,instructions:text});}});
  if(record.policy.enabled.memory){
  pi.registerTool({name:'memory_search',label:'检索记忆',description:'Search local memory. Optional inclusive dates YYYY-MM-DD; related uses lexical concepts, not embeddings. Returns bounded excerpts and IDs.',parameters:Type.Object({query:Type.Optional(Type.String()),from:Type.Optional(Type.String()),to:Type.Optional(Type.String()),mode:Type.Optional(Type.Union([Type.Literal('keyword'),Type.Literal('related')])),limit:Type.Optional(Type.Integer({minimum:1,maximum:10}))}),async execute(_id,args){return result(searchMemory({...args,project:cwd}));}});
- pi.registerTool({name:'memory_read',label:'读取记忆',description:'Read one memory by ID, or list titles when ID is omitted.',parameters:Type.Object({id:Type.Optional(Type.String())}),async execute(_id,args){const rows=listMemory().filter(x=>!x.deleted&&(!x.project||x.project===cwd));return result(args.id?(()=>{const row=rows.find(x=>x.id===args.id);return row?{id:row.id,title:row.title,text:row.text,kind:row.kind,createdAt:row.createdAt,updatedAt:row.updatedAt}:{error:'Not found'};})():rows.map(({id,title,kind,createdAt})=>({id,title,kind,createdAt})));}});
- pi.registerTool({name:'memory_write',label:'保存记忆',description:'Save user-requested durable facts or daily notes. Do not store secrets. Updating requires ID and expectedUpdatedAt from memory_read.',parameters:Type.Object({id:Type.Optional(Type.String()),expectedUpdatedAt:Type.Optional(Type.String()),title:Type.String(),text:Type.String(),kind:Type.Union([Type.Literal('global'),Type.Literal('project'),Type.Literal('daily'),Type.Literal('note')])}),async execute(_id,args){if(args.id){const row=listMemory().find(x=>x.id===args.id);if(!row||row.project&&row.project!==cwd)throw new Error('记忆不可访问');}return result(saveMemory({...args,project:cwd}));}});
+ pi.registerTool({name:'memory_read',label:'读取记忆',description:'Read one memory by ID, or list titles when ID is omitted.',parameters:Type.Object({id:Type.Optional(Type.String())}),async execute(_id,args){const rows=listMemory().filter(x=>!x.deleted&&memoryVisible(x,cwd));return result(args.id?(()=>{const row=rows.find(x=>x.id===args.id);return row?{id:row.id,title:row.title,text:row.text,kind:row.kind,createdAt:row.createdAt,updatedAt:row.updatedAt}:{error:'Not found'};})():rows.map(({id,title,kind,createdAt})=>({id,title,kind,createdAt})));}});
+ pi.registerTool({name:'memory_write',label:'保存记忆',description:'Save user-requested durable facts or daily notes. Do not store secrets. Updating requires ID and expectedUpdatedAt from memory_read.',parameters:Type.Object({id:Type.Optional(Type.String()),expectedUpdatedAt:Type.Optional(Type.String()),title:Type.String(),text:Type.String(),kind:Type.Union([Type.Literal('global'),Type.Literal('project'),Type.Literal('daily'),Type.Literal('note')])}),async execute(_id,args){if(args.id){const row=listMemory().find(x=>x.id===args.id);if(!row||!memoryVisible(row,cwd))throw new Error('记忆不可访问');}return result(saveMemory({...args,project:cwd}));}});
  }
  pi.on('tool_call',event=>{const tool=pi.getAllTools().find(x=>x.name===event.toolName);const path=tool?.sourceInfo?.path??'';if(!allowedTool(event.toolName,record.policy,path))return {block:true,reason:'此会话未启用这项能力'};});
  // Reapply the allow-list after extension reload/registration and before every run.
@@ -47,19 +58,30 @@ export function createCapabilityTools(record:PolicyRecord,cwd:string,getSkills:(
  }};}
 export {POLICY_ENTRY};
 
-/** Capture only counts and hashes, never credentials, request bodies or memory text. */
+/** Passive metadata only: never tokenize or spawn Python on the request path. */
 export function createContextAuditExtension(sessionId:string,modelId:()=>string):InlineExtension {
  return {name:'pi-web-context-audit',hidden:true,factory:pi=>{
-  pi.on('before_provider_request',async event=>{
-   const body=event.payload as {messages?:unknown;input?:unknown;tools?:unknown;system?:unknown};
-   const sanitize=(value:unknown):unknown=>{
-    if(Array.isArray(value))return value.map(sanitize);
-    if(value&&typeof value==='object'){const o=value as Record<string,unknown>;return Object.fromEntries(Object.entries(o).filter(([k])=>!['image_url','data','url','image','source'].includes(k)).map(([k,v])=>[k,sanitize(v)]));}return value;
-   };
-   const text=JSON.stringify(sanitize({messages:body.messages,input:body.input,tools:body.tools,system:body.system}));
-   const {countText,countRequest}=await import('./token-count');const {privateWrite,policyRoot}=await import('./store');const {join}=await import('node:path');
-   const count=await countText(text,modelId());const template=await countRequest(event.payload,modelId());
-   privateWrite(join(policyRoot(),sessionId+'-last-request.json'),{at:new Date().toISOString(),digest:createHash('sha256').update(text).digest('hex'),...count,template,method:count.tokens===undefined?count.method:'本地分词：请求文本序列化；不等于模板展开后的输入量',toolCount:Array.isArray(body.tools)?body.tools.length:undefined});
+  let current:{path:string;record:Record<string,unknown>}|undefined;
+  pi.on('before_provider_request',event=>{
+   try{
+    const body=event.payload as {messages?:unknown;input?:unknown;tools?:unknown;system?:unknown};
+    const sanitize=(value:unknown):unknown=>{
+     if(Array.isArray(value))return value.map(sanitize);
+     if(value&&typeof value==='object'){const o=value as Record<string,unknown>;return Object.fromEntries(Object.entries(o).filter(([k])=>!['image_url','data','url','image','source'].includes(k)).map(([k,v])=>[k,sanitize(v)]));}return value;
+    };
+    const text=JSON.stringify(sanitize({messages:body.messages,input:body.input,tools:body.tools,system:body.system}));
+    const record={at:new Date().toISOString(),model:modelId(),digest:createHash('sha256').update(text).digest('hex'),chars:text.length,method:'请求文本字符数；词元用量等待模型实际返回',template:{method:'等待模型实际输入统计；不在发送前复算整段历史'},toolCount:Array.isArray(body.tools)?body.tools.length:undefined};
+    const path=join(policyRoot(),sessionId+'-last-request.json');privateWrite(path,record);current={path,record};
+   }catch{console.warn('PI_CONTEXT_AUDIT_UNAVAILABLE; request continues');}
+  });
+  pi.on('message_end',event=>{
+   try{
+    if(event.message.role!=='assistant'||!current)return;
+    const message=event.message as {usage?:{input?:number;cacheRead?:number;output?:number};stopReason?:string};
+    const u=message.usage;const valid=u&&Number.isFinite(u.input)&&Number.isFinite(u.cacheRead)&&(u.input??0)+(u.cacheRead??0)>0&&message.stopReason!=='error'&&message.stopReason!=='aborted';
+    const tokens=valid?u!.input!+u!.cacheRead!:undefined;
+    privateWrite(current.path,{...current.record,usage:u,template:{tokens,method:valid?'模型服务实际输入，包含已复用缓存；不等于新增预填充量':'本轮没有可靠输入统计'},actualNewInputTokens:valid?u!.input:undefined,actualCacheReadTokens:valid?u!.cacheRead:undefined});
+   }catch{console.warn('PI_CONTEXT_USAGE_AUDIT_UNAVAILABLE; task continues');}
   });
  }};
 }

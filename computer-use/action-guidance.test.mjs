@@ -1,0 +1,6 @@
+import{test}from'node:test';import assert from'node:assert/strict';import{withActionGuidance}from'./templates/action-guidance.mjs';
+for(const text of ['Accessibility element 7 is stale or missing','There has been no change in the accessibility tree'])test(text,()=>{const r={isError:false,content:[{type:'text',text}],details:{x:1}},old=JSON.stringify(r),out=withActionGuidance(r);assert.equal(JSON.stringify(r),old);assert.equal(out.isError,false);assert.equal(out.content[0],r.content[0]);assert.ok(out.content.length===2);assert.equal(out.details,r.details);});
+test('actual error is retained',()=>{const r={isError:true,content:[{type:'text',text:'Accessibility element 12 is stale or missing'}]};assert.equal(withActionGuidance(r).isError,true)});
+test('normal result unchanged',()=>{const r={content:[{type:'text',text:'value: 12'}]};assert.equal(withActionGuidance(r),r)});
+
+test('verified capability guide is delivered once by caller without requiring full upstream docs',()=>{const r={content:[{type:'text',text:'Window state'}]};const first=withActionGuidance(r,{enhancedBrowser:true,showEnhancedGuide:true});assert.match(first.content[1].text,/Tab.hover/);assert.equal(withActionGuidance(r,{enhancedBrowser:true,showEnhancedGuide:false}),r);assert.equal(withActionGuidance(r,{enhancedBrowser:false,showEnhancedGuide:true}),r)});
