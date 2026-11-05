@@ -1,7 +1,8 @@
 /** Build a candidate only. This receipt NEVER authorizes installation/activation. */
 import {spawnSync}from'node:child_process';
-import{readFileSync,writeFileSync,existsSync}from'node:fs';
+import{readFileSync,writeFileSync,existsSync,mkdirSync,cpSync}from'node:fs';
 import{resolve,join}from'node:path';
+import{homedir}from'node:os';
 import{fileURLToPath}from'node:url';
 import{createHash}from'node:crypto';
 import{sourceFingerprint}from'./verify-access-release-gate.mjs';
@@ -15,7 +16,16 @@ run(process.execPath,['scripts/prepare-desktop.mjs']);
 if(sourceFingerprint(root)!==before)throw Error('Source changed while staging; rebuild the exact current candidate');
 run(process.execPath,['node_modules/@tauri-apps/cli/tauri.js','build','--config','src-tauri/tauri.beta.conf.json','--bundles','app','--ci']);
 if(sourceFingerprint(root)!==before)throw Error('Source changed while bundling; candidate is not accepted');
-const app=join(root,'src-tauri/target/release/bundle/macos/Pi Agent Access 测试版.app');
+const builtApp=join(root,'src-tauri/target/release/bundle/macos/Pi Agent Access 测试版.app');
+const release=join(homedir(),'Library/Application Support/Pi Agent Access Beta/releases',before);
+mkdirSync(release,{recursive:true,mode:0o700});
+const app=join(release,'Pi Agent Access 测试版.app');
+if(existsSync(app)){
+ if(runtimeFingerprint(app)!==runtimeFingerprint(builtApp))throw Error('Immutable beta release already exists with different content; never overwrite it');
+}else cpSync(builtApp,app,{recursive:true});
+// Only after every live gate: expose this exact canonical app through the beta
+// Applications link. Do not relocate its server or rewrite catalog paths.
+
 const server=join(app,'Contents/Resources/resources/server');
 const hashes={};
 const hash=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
@@ -23,6 +33,6 @@ for(const [src,dest]of[['desktop/server-launcher.cjs','desktop-server.cjs'],['de
  const expected=hash(join(root,src));if(hash(join(server,dest))!==expected)throw Error('Packaged source drift: '+src);hashes[dest]=expected;
 }
 run('/usr/bin/codesign',['--verify','--deep','--strict',app]);
-const receipt={format:1,distributionProfile:'beta',activationAllowed:false,reason:'Development candidate; full historical and real-model gates are separately mandatory',builtAt:new Date().toISOString(),sourceDirectory:root,sourceDigest:before,actualApp:app,runtimeDirectory:server,runtimeDigest:runtimeFingerprint(server),packagedSourceHashes:hashes};
+const receipt={format:1,distributionProfile:'beta',activationAllowed:false,reason:'Development candidate; full historical and real-model gates are separately mandatory',builtAt:new Date().toISOString(),sourceDirectory:root,sourceDigest:before,actualApp:app,applicationsEntryStrategy:'link only after full acceptance; canonical runtime remains here',runtimeDirectory:server,runtimeDigest:runtimeFingerprint(server),packagedSourceHashes:hashes};
 writeFileSync(join(root,'src-tauri/target/beta-candidate.json'),JSON.stringify(receipt,null,2)+'\n');
 console.log('BETA_CANDIDATE_BOUND; installation remains blocked until full acceptance');

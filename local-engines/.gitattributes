@@ -1,0 +1,2 @@
+# Upstream patch context/additions are preserved byte for byte.
+*.patch -whitespace

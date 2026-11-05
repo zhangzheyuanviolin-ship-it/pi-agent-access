@@ -606,6 +606,11 @@ fn start_packaged_server(
     desktop_instance_id: &str,
 ) -> Result<(Url, DesktopServer), Box<dyn std::error::Error>> {
     let resource_dir = child_process_compatible_path(&app.path().resource_dir()?);
+    // Beta's Applications entry may be a link to an immutable, already tested
+    // release. Resolve it before constructing any SDK/gateway paths.
+    let resource_dir = if app.config().identifier.ends_with(".beta") {
+        fs::canonicalize(&resource_dir)?
+    } else { resource_dir };
     let node_path = bundled_node_path(&resource_dir);
     if !node_path.is_file() {
         return Err(io::Error::new(

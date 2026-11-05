@@ -53,3 +53,10 @@ audio mlock. Apple system_cmds vm_stat.c subtracts speculative_count from its
 printed Pages free, so adding printed free + speculative does not double count.
 Primary definitions: apple-oss-distributions/xnu osfmk/mach/vm_statistics.h and
 osfmk/vm/vm_pageout.c; system_cmds/vm_stat/vm_stat.c.
+
+Candidate bundles live at an immutable beta releases/<sourceDigest>/ path. All
+model/UI/prefix acceptance must use that exact canonical app. After full gates,
+the separate Applications entry can link to it; Rust canonicalizes beta resources
+before constructing Node/SDK/backend paths. Never copy to a new runtime path and
+repair recipes after testing, never overwrite an existing immutable release, and
+never treat candidate construction as installation authorization.

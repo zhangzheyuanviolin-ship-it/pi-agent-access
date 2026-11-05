@@ -86,12 +86,18 @@ class Backend:
             if confirmed['swapouts']!=initial['swapouts'] or confirmed['swap_bytes']>initial['swap_bytes']:
                 raise RuntimeError('模型加载期间出现新的内存换出；已拒绝测试模型，不影响稳定任务')
             self.admission['after_server_start']=after
+    def begin_native_resources(self):
+        if os.environ.get('PI_ACCESS_PROFILE')!='beta':return
+        from resource_admission import snapshot
+        self.native_resource_baseline=snapshot()
+        if self.native_resource_baseline['pressure']!=1 or self.native_resource_baseline['available_bytes']<8*1024**3:
+            raise RuntimeError('当前内存压力不适合测试推理，未重建模型缓存')
     def check_native_resources(self):
         if os.environ.get('PI_ACCESS_PROFILE')!='beta':return
         try:
             from resource_admission import check_resources
             result=check_resources(8*1024**3,self.config.get('maximum_existing_swap_bytes',0))
-            before=self.admission['confirmed'];after=result['confirmed']
+            before=getattr(self,'native_resource_baseline',self.admission['confirmed']);after=result['confirmed']
             if after['swapouts']!=before['swapouts'] or after['swap_bytes']>before['swap_bytes']:
                 raise RuntimeError('实际模型加载出现新增换出；测试推理停止，稳定任务未取消')
             self.admission['after_model_load']=result
@@ -164,6 +170,7 @@ class Backend:
                         return {'role':'assistant','content':text}
                     content,calls=tool_calls(text,body.get('tools'))
                     return {'role':'assistant','content':content,**({'tool_calls':calls} if calls else {})}
+                self.begin_native_resources()
                 gen = self.native_session.events(project_delivery_messages(body['messages'],self.deliveries),
                     lambda rows: minicpm_tool_messages(self.normalize(rows, tmp)[0],body.get('tools')), speech=speech,
                     max_tokens=n, cancel=cancel, tools=body.get('tools'),assistant_message=reply)

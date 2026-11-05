@@ -37,6 +37,7 @@ class LiveSession:
         b = self.backend
         if b.native_session:
             await asyncio.to_thread(b.native_session.close)
+        if hasattr(b,'begin_native_resources'):await asyncio.to_thread(b.begin_native_resources)
         self.http = ClientSession(timeout=ClientTimeout(total=180))
         self.ws = await self.http.ws_connect(
             f"http://127.0.0.1:{b.config['native_port']}/backend",
@@ -46,6 +47,7 @@ class LiveSession:
         first = await self.ws.receive_json(timeout=180)
         if first.get('type') != 'session.created':
             raise RuntimeError(str(first))
+        if hasattr(b,'check_native_resources'):await asyncio.to_thread(b.check_native_resources)
         self.native_id = first['session_id']
         self.reader = asyncio.create_task(self.receive())
         self.watchdog = asyncio.create_task(self.expire())
