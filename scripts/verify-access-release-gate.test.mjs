@@ -14,3 +14,17 @@ test('a proof cannot redirect validation away from the actual packaging source o
  assert.equal(validateGateTargets(g,{sourceDirectory:'/packaged/B',runtimeDirectory:'/packaged/runtimeB'}).length,2);
  assert.deepEqual(validateGateTargets(g,{sourceDirectory:'/tested/A',runtimeDirectory:'/tested/runtimeA'}),[]);
 });
+
+test('beta evidence must cover its explicit complete model roster',async()=>{
+ const{readFileSync}=await import('node:fs');const roster=JSON.parse(readFileSync(new URL('../docs/beta-model-roster.json',import.meta.url)));
+ const g={...gate(),distributionProfile:'beta',localModelCount:roster.modelIds.length,modelIds:roster.modelIds};
+ assert.deepEqual(validateGate(g,{sourceDigest:'source',verifyEvidence:false}),[]);
+ for(const id of roster.modelIds){const missing={...g,modelIds:g.modelIds.filter(x=>x!==id)};assert.ok(validateGate(missing,{sourceDigest:'source',verifyEvidence:false}).some(x=>x.includes('roster')));}
+ assert.ok(validateGate({...g,localModelCount:7},{sourceDigest:'source',verifyEvidence:false}).length);
+});
+test('beta engine code and signing/permission configuration participate in source identity',async()=>{
+ const{mkdtempSync,mkdirSync,writeFileSync,rmSync}=await import('node:fs');const{tmpdir}=await import('node:os');const{join,dirname}=await import('node:path');const dir=mkdtempSync(join(tmpdir(),'pi-beta-digest-'));
+ try{for(const name of ['beta-runtime/beta_gateway.py','beta-runtime/resource_admission.py','src-tauri/tauri.beta.conf.json','src-tauri/Info.beta.plist','src-tauri/Entitlements.beta.plist','docs/beta-model-roster.json']){
+ const before=sourceFingerprint(dir);const path=join(dir,name);mkdirSync(dirname(path),{recursive:true});writeFileSync(path,'new candidate content');assert.notEqual(sourceFingerprint(dir),before,name);
+ }}finally{rmSync(dir,{recursive:true,force:true});}
+});

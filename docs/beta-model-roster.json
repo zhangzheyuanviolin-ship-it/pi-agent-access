@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "profile": "beta",
+  "modelIds": [
+    "Qwen3.8-Flash-Next-Sushi-4bpw",
+    "MiMo-V2.6-Flash-Sushi-2.3bpw",
+    "GLM-5.3-Flash-Sushi-2.4bpw",
+    "deepseek-v4-flash",
+    "Ho-Jin-93/Qwen3.8-27B-MLTF-q8c",
+    "DeepSeek-V4.1-Flash-1017-Sushi-STQ-1.75bpw",
+    "Qwen3.8-27B-oQ8e-fp16-mtp",
+    "MiniCPM-o-4.5-F16"
+  ],
+  "note": "Approved beta roster includes all seven golden local backends plus the Mini candidate. Every enabled model still needs real acceptance; this file grants no activation."
+}

@@ -413,6 +413,14 @@
       "group": "runtime",
       "historicalEvidence": "golden-and-omni-beta-20261105/mini-beta-audio-probe.log",
       "requiresLiveEvidence": true
+    },
+    {
+      "id": "R10-BETA-CANDIDATE-BINDING",
+      "requirement": "测试版推理Python源、签名/摄麦权限配置、模型清单纳入源码摘要；构建前后源码必须一致且逐字核对最终App内启动器和推理文件。候选构建证明不能代替完整门禁或授权安装。",
+      "test": "scripts/verify-access-release-gate.test.mjs + scripts/build-beta.mjs",
+      "group": "release",
+      "historicalEvidence": "golden-and-omni-beta-20261105/gateway-stage-drift-detected.json",
+      "requiresLiveEvidence": true
     }
   ],
   "reviewScope": {
