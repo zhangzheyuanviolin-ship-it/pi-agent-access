@@ -1,11 +1,11 @@
 /** Stable order is also the order of the frozen prompt prefix. No dates are added per turn. */
-export const CATEGORIES = ['system','project','memory','files','plugins','skills','mcp','admin'] as const;
+export const CATEGORIES = ['system','project','memory','files','plugins','skills','mcp','admin','localmedia'] as const;
 export type Category = typeof CATEGORIES[number];
 export type ContextPolicy = {version:1;enabled:Record<Category,boolean>;plugins:string[];disabledSkills:string[];memoryGlobal:boolean;memoryProject:boolean};
-export const LABELS:Record<Category,string> = {system:'基础指令',project:'项目说明',memory:'记忆',files:'文件与终端',plugins:'插件',skills:'技能',mcp:'MCP',admin:'模型与设置'};
-export function defaultPolicy():ContextPolicy{return {version:1,enabled:{system:true,project:true,memory:true,files:true,plugins:true,skills:true,mcp:true,admin:false},plugins:[],disabledSkills:[],memoryGlobal:true,memoryProject:false};}
+export const LABELS:Record<Category,string> = {system:'基础指令',project:'项目说明',memory:'记忆',files:'文件与终端',plugins:'插件',skills:'技能',mcp:'MCP',admin:'模型与设置',localmedia:'本地音视频分析'};
+export function defaultPolicy():ContextPolicy{return {version:1,enabled:{system:true,project:true,memory:true,files:true,plugins:true,skills:true,mcp:true,admin:false,localmedia:false},plugins:[],disabledSkills:[],memoryGlobal:true,memoryProject:false};}
 export function parsePolicy(value:unknown):ContextPolicy {
- const p=value as ContextPolicy;if(!p||p.version!==1||!p.enabled||CATEGORIES.some(k=>k==='admin'?p.enabled[k]!==undefined&&typeof p.enabled[k]!=='boolean':typeof p.enabled[k]!=='boolean')||!Array.isArray(p.plugins)||!Array.isArray(p.disabledSkills)||[...p.plugins,...p.disabledSkills].some(x=>typeof x!=='string'||x.length>4096)||typeof p.memoryGlobal!=='boolean'||typeof p.memoryProject!=='boolean')throw new Error('无效的上下文设置');
+ const p=value as ContextPolicy;if(!p||p.version!==1||!p.enabled||CATEGORIES.some(k=>k==='admin'||k==='localmedia'?p.enabled[k]!==undefined&&typeof p.enabled[k]!=='boolean':typeof p.enabled[k]!=='boolean')||!Array.isArray(p.plugins)||!Array.isArray(p.disabledSkills)||[...p.plugins,...p.disabledSkills].some(x=>typeof x!=='string'||x.length>4096)||typeof p.memoryGlobal!=='boolean'||typeof p.memoryProject!=='boolean')throw new Error('无效的上下文设置');
  return {version:1,enabled:Object.fromEntries(CATEGORIES.map(k=>[k,p.enabled[k]??false])) as ContextPolicy['enabled'],plugins:[...new Set(p.plugins)].sort(),disabledSkills:[...new Set(p.disabledSkills)].sort(),memoryGlobal:p.memoryGlobal,memoryProject:p.memoryProject};
 }
 export const POLICY_ENTRY='pi-web:context-capabilities-v1';
@@ -15,6 +15,7 @@ export function readPolicyRecord(entries:readonly {type:string;customType?:strin
 }
 export const FILE_TOOLS=new Set(['read','write','edit','bash','powershell','grep','find','ls','video_analyze']);
 export function allowedTool(name:string,p:ContextPolicy,sourcePath=''):boolean{
+ if(name==='local_media')return p.enabled.localmedia===true;
  if(name==='settings_manage')return p.enabled.admin===true;
  if(name==='video_analyze')return true;
  if(FILE_TOOLS.has(name))return p.enabled.files;

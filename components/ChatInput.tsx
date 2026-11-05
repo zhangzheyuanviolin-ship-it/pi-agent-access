@@ -1,6 +1,9 @@
 "use client";
 import { PRESET_LABELS } from "@/lib/tool-budget";
 import { ToolSetupDialog } from "./ToolSetupDialog";
+import {OmniSettingsDialog} from './OmniSettingsDialog';
+import {OmniLiveDialog} from './OmniLiveDialog';
+import {omniKind} from '@/lib/local-omni-models';
 
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo, useImperativeHandle, forwardRef, KeyboardEvent } from "react";
 import type { BuiltinSlashCommandResult, CompactResultInfo, QueuedMessages, SlashCommandInfo } from "@/hooks/useAgentSession";
@@ -862,6 +865,8 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [automationDropdownOpen, setAutomationDropdownOpen] = useState(false);
   const [toolDropdownOpen, setToolDropdownOpen] = useState(false);
+  const [omniSettingsOpen,setOmniSettingsOpen]=useState(false);
+  const [omniLiveOpen,setOmniLiveOpen]=useState(false);
   const [thinkingDropdownOpen, setThinkingDropdownOpen] = useState(false);
   const [controlsMenuOpen, setControlsMenuOpen] = useState(false);
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false);
@@ -3094,6 +3099,7 @@ export const ChatInput = forwardRef<ChatInputHandle, Props>(function ChatInput({
               </div>
             )}
 
+            {omniKind(model)&&getToolSetup&&<><button type="button" className="native-toolbar-button" disabled={isStreaming} aria-haspopup="dialog" aria-expanded={omniSettingsOpen} onClick={()=>setOmniSettingsOpen(true)}>语音回复设置</button>{omniSettingsOpen&&<OmniSettingsDialog load={getToolSetup} onClose={()=>setOmniSettingsOpen(false)}/>}<button type="button" className="native-toolbar-button" disabled={isStreaming} aria-haspopup="dialog" aria-expanded={omniLiveOpen} onClick={()=>setOmniLiveOpen(true)}>实时音视频通话</button>{omniLiveOpen&&model&&<OmniLiveDialog model={model.modelId} onClose={()=>setOmniLiveOpen(false)}/>}</>}
             {onCompact && !isCompacting && (
               <button
                 type="button"

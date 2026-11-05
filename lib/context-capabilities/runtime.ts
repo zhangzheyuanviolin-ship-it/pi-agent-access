@@ -11,6 +11,7 @@ import {POLICY_ENTRY,allowedTool,type ContextPolicy,type PolicyRecord} from './p
 import {listMemory,saveMemory,searchMemory,memorySnapshot,memoryVisible} from './memory';
 import {mayReadProjectConfigNow} from '../project-trust';
 import {privateWrite,policyRoot} from './store';
+import {registerLocalMediaTool} from '../local-media';
 export type Inventory={plugins:{path:string;label:string;enabled:boolean;approved:boolean}[];skills:{name:string;filePath:string;description:string;enabled:boolean}[]};
 export async function inventory(cwd:string):Promise<Inventory>{
  const agentDir=getAgentDir();const settings=SettingsManager.create(cwd,agentDir);settings.setProjectTrusted(mayReadProjectConfigNow(cwd,agentDir));
@@ -32,6 +33,7 @@ export async function buildPolicyRecord(cwd:string,policy:ContextPolicy):Promise
 }
 export function createCapabilityTools(record:PolicyRecord,cwd:string,getSkills:()=>{name:string;filePath:string}[]):Extract<InlineExtension,{factory:unknown}>{return {name:'pi-web-capability-tools',hidden:true,factory:pi=>{
  preserveRequestToolPrefix(pi,record);
+ if(record.policy.enabled.localmedia)registerLocalMediaTool(pi,!record.policy.enabled.files);
  const result=(value:unknown)=>({content:[{type:'text' as const,text:JSON.stringify(value)}],details:{}});
  if(record.policy.enabled.mcp){
  pi.registerTool({name:'mcp_call',label:'调用MCP工具',description:'Call an enabled MCP tool by exact name and JSON arguments. Find its schema with mcp_discover. Tool declarations stay fixed.',parameters:Type.Object({name:Type.String(),arguments:Type.Record(Type.String(),Type.Unknown())}),reachesTools:args=>typeof args.name==='string'?[args.name]:[],async execute(_id,args,signal,update,ctx){

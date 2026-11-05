@@ -1,3 +1,4 @@
+import {createLocalOmniExtension,omniKind} from './local-omni';
 import {videoRoute,createVideoAnalysisExtension,videoToolSelection} from './video-analysis';
 import {pendingAttachments,attachmentNotice,videoAttachmentNotice,NOTIFIED_ATTACHMENTS,DELIVERY_NOTIFIED,DELIVERY_GUIDE,needsDeliveryGuide} from './received-attachments';
 import {createPermissionGuardExtension} from './settings-agent/permissions';
@@ -986,7 +987,7 @@ export class AgentSessionWrapper {
             const slash=(command.message as string).trimStart().startsWith('/');
             const received=slash?[]:pendingAttachments(this.inner.sessionManager.getEntries());
             const deliveryGuide=existsSync(join(getAgentDir(),'bin','pi-file')) && !slash && this.inner.getActiveToolNames().includes('bash') && needsDeliveryGuide(this.inner.sessionManager.getEntries());
-            prompt = this.inner.prompt((command.message as string)+attachmentNotice(received)+videoAttachmentNotice(received)+(deliveryGuide?DELIVERY_GUIDE:''), {
+            prompt = this.inner.prompt((command.message as string)+attachmentNotice(received)+(omniKind(this.inner.model)?'':videoAttachmentNotice(received))+(deliveryGuide?DELIVERY_GUIDE:''), {
               ...(promptImages?.length ? { images: promptImages } : {}),
               ...(streamingBehavior ? { streamingBehavior } : {}),
               source: "rpc",
@@ -2696,6 +2697,7 @@ export async function startRpcSession(
       if(managedRecord!.pluginPrompt===undefined){managedRecord!.pluginPrompt=text;sessionManager.appendCustomEntry(POLICY_ENTRY,structuredClone(managedRecord));}
       return managedRecord!.pluginPrompt??'';
     }):undefined;
+    const omniExtension=createLocalOmniExtension();
     const videoExtension=createVideoAnalysisExtension({cwd:sessionCwd,restricted:chatWorkspace||chatOnly||!!managedRecord&&!managedRecord.policy.enabled.files});
     const prefixObserver=createLocalPrefixObserver(sessionManager.getSessionId());
     const services = await createAgentSessionServices({
@@ -2708,7 +2710,7 @@ export async function startRpcSession(
         systemPrompt:managedRecord.prompt||' ',systemPromptOverride:()=>managedRecord!.prompt||' ',
         appendSystemPrompt:[' '],appendSystemPromptOverride:()=>[],
         skillsOverride:base=>({...base,skills:base.skills.filter(s=>!s.disableModelInvocation&&!managedRecord!.policy.disabledSkills.includes(s.filePath))}),
-        extensionFactories:[createPermissionGuardExtension(),videoExtension,createProjectCommandBashExtension({cwd:sessionCwd,settings:settingsManager}),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??''),prefixObserver],
+        extensionFactories:[createPermissionGuardExtension(),videoExtension,omniExtension,createProjectCommandBashExtension({cwd:sessionCwd,settings:settingsManager}),createSettingsAgentExtension(managedRecord,sessionCwd,{startSubagent:req=>SUBAGENT_CONTROLLER.extensionRuntime.start(req)}),...(builtins?.extensions??[]),createCapabilityTools(managedRecord,sessionCwd,()=>chatSessionRef.current?.resourceLoader.getSkills().skills as {name:string;filePath:string}[]??[]),managedPromptExtension!,createContextAuditExtension(sessionManager.getSessionId(),()=>chatSessionRef.current?.model?.id??''),prefixObserver],
       } : subagentResources
         ? {
             noExtensions: !subagentResources.loadExtensions,
@@ -2723,7 +2725,7 @@ export async function startRpcSession(
                 }
               : {}),
             appendSystemPrompt: subagentResources.appendSystemPrompt,
-            extensionFactories: [createPermissionGuardExtension(),videoExtension,...(usesExactSystemPrompt?[exactSystemPromptExtension]:[]),prefixObserver],
+            extensionFactories: [createPermissionGuardExtension(),videoExtension,omniExtension,...(usesExactSystemPrompt?[exactSystemPromptExtension]:[]),prefixObserver],
           }
         : chatWorkspace
           ? {
@@ -2732,7 +2734,7 @@ export async function startRpcSession(
               noContextFiles: true,
               systemPrompt: chatWorkspacePrompt(chatFilesEnabled),
               extensionFactories: [
-              createPermissionGuardExtension(),videoExtension,
+              createPermissionGuardExtension(),videoExtension,omniExtension,
                 ...(builtins?.extensions ?? []),
                 createArtifactGuideExtension(),
                 ...(chatGrants
@@ -2755,11 +2757,11 @@ export async function startRpcSession(
         : chatOnly
           ? {
               ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS,
-              extensionFactories: [createPermissionGuardExtension(),videoExtension,exactSystemPromptExtension,prefixObserver],
+              extensionFactories: [createPermissionGuardExtension(),videoExtension,omniExtension,exactSystemPromptExtension,prefixObserver],
             }
         : {
             extensionFactories: [
-              createPermissionGuardExtension(),videoExtension,
+              createPermissionGuardExtension(),videoExtension,omniExtension,
               ...(builtins?.extensions ?? []),
               createReadOnlyMcpPolicyExtension(),
               createArtifactGuideExtension(),

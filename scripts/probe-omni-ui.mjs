@@ -1,0 +1,5 @@
+import {chromium} from 'playwright';import {writeFile} from 'node:fs/promises';
+const dir=process.env.OMNI_TEST_OUTPUT;const browser=await chromium.launch({channel:'chrome',headless:true,args:['--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream']});
+try{const context=await browser.newContext({viewport:{width:1280,height:900},permissions:['microphone','camera']});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+await page.goto('http://127.0.0.1:30147/login',{waitUntil:'domcontentloaded'});await page.request.post('http://127.0.0.1:30147/api/web-auth',{data:{password:'omni-local-test'},headers:{Origin:'http://127.0.0.1:30147'}});await page.goto('http://127.0.0.1:30147/',{waitUntil:'domcontentloaded'});await page.waitForTimeout(1500);await writeFile(dir+'/ui-inventory.txt',await page.locator('body').innerText());await writeFile(dir+'/ui-ax.txt',await page.locator('body').ariaSnapshot());await page.screenshot({path:dir+'/ui-initial.png'});console.log(JSON.stringify({errors,title:await page.title(),buttons:await page.getByRole('button').allTextContents()}));
+}finally{await browser.close();}
