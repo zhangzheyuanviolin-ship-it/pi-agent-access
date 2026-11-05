@@ -54,13 +54,25 @@ jobs:
           d=api('releases/'+rid);assert d['tag_name']==tag and d['draft']
           manifest=json.loads(blob(manifest_sha));assert manifest['sha256']==sha and manifest['size']==size and len(manifest['parts'])<1000
           gate=manifest['releaseGate'];assert gate['version']==1 and re.fullmatch(r'[a-f0-9]{64}',gate['sourceDigest']) and gate['localModelCount']==7
-          required=['local_models','terminal','computer_driver','computer_model','video_cloud_mobile','memory_defaults','deepseek_repeat_load_cache','memory_admission_boundaries','historical_regression_suite','idle_cache_interval_recovery','accessibility_resource_monitor','network_download_preserved']
+          required=['local_models','terminal','computer_driver','computer_model','video_cloud_mobile','memory_defaults','deepseek_repeat_load_cache','memory_admission_boundaries','historical_regression_suite','mcp_prefix_lifecycle','idle_cache_interval_recovery','accessibility_resource_monitor','network_download_preserved']
           assert all(gate['checks'].get(k,{}).get('status')=='passed' and gate['checks'][k].get('evidence') for k in required)
           assert gate['checks'].get('package_smoke',{}).get('status')=='passed' and gate['artifact']['sha256']==sha and gate['artifact']['size']==size
           age=(datetime.datetime.now(datetime.timezone.utc)-datetime.datetime.fromisoformat(gate['completedAt'].replace('Z','+00:00'))).total_seconds();assert -60<=age<=86400
           ref=api('git/ref/tags/'+tag)['object']
           while ref['type']=='tag':ref=api('git/tags/'+ref['sha'])['object']
           assert ref['type']=='commit' and ref['sha']==gate['gitCommit']
+          assert gate['activationPolicyVersion']==2 and re.fullmatch(r'[a-f0-9]{64}',gate['runtimeDigest'])
+          source_tree=api('git/commits/'+ref['sha'])['tree']['sha'];assert source_tree==gate['sourceTree']
+          entries=api('git/trees/'+source_tree+'?recursive=1');assert not entries.get('truncated')
+          registry_entry=next(x for x in entries['tree'] if x['path']=='docs/historical-regressions.json')
+          registry_bytes=blob(registry_entry['sha']);assert hashlib.sha256(registry_bytes).hexdigest()==gate['historicalRegistryDigest']
+          registry=json.loads(registry_bytes)
+          assert gate['historyReview']['completed'] and gate['historyReview']['registryDigest']==gate['historicalRegistryDigest']
+          for incident in registry['regressions']:
+              check=gate['historicalChecks'][incident['id']]
+              assert check['status']=='passed' and check['runtimeDigest']==gate['runtimeDigest'] and check['evidence']
+              assert any(e.get('kind')=='live' for e in check['evidence'])
+
 
           Path('parts').mkdir()
           def fetch(part):

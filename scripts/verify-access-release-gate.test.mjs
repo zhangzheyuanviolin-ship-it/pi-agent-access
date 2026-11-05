@@ -1,4 +1,4 @@
-import test from'node:test';import assert from'node:assert/strict';import{REQUIRED,validateGate,sourceFingerprint}from'./verify-access-release-gate.mjs';
+import test from'node:test';import assert from'node:assert/strict';import{REQUIRED,validateGate,sourceFingerprint,validateGateTargets}from'./verify-access-release-gate.mjs';
 function gate(){return{version:1,sourceDigest:'source',completedAt:new Date().toISOString(),localModelCount:7,checks:Object.fromEntries(REQUIRED.map(id=>[id,{status:'passed',evidence:[{path:'/not-read-in-unit-test',sha256:'a'.repeat(64)}]}]))};}
 test('valid complete attestation is accepted',()=>assert.deepEqual(validateGate(gate(),{sourceDigest:'source',verifyEvidence:false}),[]));
 test('every missing historical regression independently blocks release',()=>{for(const id of REQUIRED){const g=gate();delete g.checks[id];assert.ok(validateGate(g,{sourceDigest:'source',verifyEvidence:false}).some(x=>x.includes(id)));}});
@@ -7,3 +7,10 @@ test('changed source, old or future evidence, changed roster are rejected',()=>{
 test('evidence must exist and match, even when status says passed',()=>assert.ok(validateGate(gate(),{sourceDigest:'source'}).length));
 
 test('current repository fingerprint can be calculated',()=>assert.match(sourceFingerprint(),/^[a-f0-9]{64}$/));
+
+
+test('a proof cannot redirect validation away from the actual packaging source or target',()=>{
+ const g={sourceDirectory:'/tested/A',runtimeDirectory:'/tested/runtimeA'};
+ assert.equal(validateGateTargets(g,{sourceDirectory:'/packaged/B',runtimeDirectory:'/packaged/runtimeB'}).length,2);
+ assert.deepEqual(validateGateTargets(g,{sourceDirectory:'/tested/A',runtimeDirectory:'/tested/runtimeA'}),[]);
+});

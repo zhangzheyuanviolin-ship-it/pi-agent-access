@@ -13,7 +13,7 @@ parser.add_argument('--development-only', action='store_true', help='Build a non
 args = parser.parse_args()
 if not args.development_only:
  gate = str(args.gate) if args.gate else os.environ.get('PI_RELEASE_GATE_FILE', '')
- subprocess.run(['node', str(root / 'scripts/verify-access-release-gate.mjs'), gate], cwd=root, check=True)
+ subprocess.run(['node', str(root / 'scripts/verify-access-release-gate.mjs'), gate, '--source-dir', str(root), '--runtime-dir', str(root / 'src-tauri/resources/server')], cwd=root, check=True)
 output = args.output.resolve()
 output.mkdir(parents=True, exist_ok=True)
 version = json.loads((root / 'src-tauri/pi-agent-desktop-package.json').read_text())['version']
@@ -57,6 +57,15 @@ for file in sorted((server / 'node_modules').rglob('*')):
 run('codesign','--force','--sign','-',str(resources / 'resources/Pi Agent Server.app'))
 run('codesign','--force','--sign','-',str(app))
 run('codesign','--verify','--deep','--strict','--verbose=2',str(app))
+# Signing/copying must not silently turn accepted package A into untested package B.
+if not args.development_only:
+ accepted = json.loads(Path(gate).read_text())
+ verifier = (root / 'scripts/historical-release-gate.mjs').as_uri()
+ code = "import {runtimeFingerprint} from " + json.dumps(verifier) + "; console.log(runtimeFingerprint(process.argv[1]));"
+ actual = subprocess.check_output(['node','--input-type=module','-e',code,str(server)],text=True).strip()
+ if actual != accepted['runtimeDigest']:
+  raise SystemExit('S0 RELEASE BLOCKED: final signed server differs from the actually tested runtime; validate the final artifact before publication')
+
 
 vendor = server / 'access-distribution/lcu'
 manifest = json.loads((vendor / 'bundle.json').read_text())

@@ -12,7 +12,7 @@ def main():
  revoked=RELEASES/'revoked-runtimes.json'
  if revoked.exists()and str(runtime)in json.loads(revoked.read_text())['revoked']:raise SystemExit('S0: revoked defective runtime cannot be activated, including rollback')
  # No development-only, hotfix or partial-evidence bypass.
- subprocess.run(['node',str(ROOT/'scripts/verify-access-release-gate.mjs'),str(args.gate.resolve())],check=True,cwd=ROOT)
+ subprocess.run(['node',str(ROOT/'scripts/verify-access-release-gate.mjs'),str(args.gate.resolve()),'--source-dir',gate['sourceDirectory'],'--runtime-dir',str(runtime)],check=True,cwd=ROOT)
  sys.path.insert(0,'/Users/zhangzheyuan/LocalAI/Pi-Video-Global-Cleanup-20261101');from pi_client import api
  if api('/api/agent/running')['runningSessionIds']:raise SystemExit('User task active; activation deferred without cancelling it')
  selection=BRIDGE/'private/pi-web-release.json';old=json.loads(selection.read_text())
