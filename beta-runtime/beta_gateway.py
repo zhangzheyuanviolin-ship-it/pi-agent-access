@@ -1,6 +1,6 @@
 """Beta-only local router. All mutable state and owned ports are separate from stable."""
 from pathlib import Path
-import os,json,sys,urllib.request,http.cookiejar,time,signal,subprocess,re,ctypes
+import os,json,sys,urllib.request,time,signal,subprocess,base64
 import model_gateway as core
 ROOT=Path.home()/'Library/Application Support/Pi Agent Access Beta'
 
@@ -14,17 +14,27 @@ def validate_catalog(catalog):
    if value and not Path(value).resolve().is_relative_to(ROOT.resolve()):raise RuntimeError('Beta cache points outside beta data')
   args=m.get('args',[])
   if '--port' not in args or args[args.index('--port')+1]!=str(m['port']):raise RuntimeError('Beta native port does not match recipe')
-  if '--host' not in args or args[args.index('--host')+1]!='127.0.0.1':raise RuntimeError('Beta native host must be loopback')
+  if m['engine']=='omni':
+   expected=str(Path(__file__).resolve().parents[1]/'local-omni/backend.py')
+   if expected not in args or '--config' not in args:raise RuntimeError('Beta omni recipe must use this packaged backend')
+   config_path=Path(args[args.index('--config')+1]).resolve()
+   if not config_path.is_relative_to(ROOT.resolve()):raise RuntimeError('Beta omni config is outside beta data')
+   config=json.loads(config_path.read_text())
+   for field in ['output_dir','engine_log']:
+    if field in config and not Path(config[field]).resolve().is_relative_to(ROOT.resolve()):raise RuntimeError('Beta omni output is outside beta data')
+   native=config.get('native_port')
+   if native is not None and (type(native)is not int or not 12400<=native<12500 or native in [12449,*ports]):raise RuntimeError('Beta omni native port is not isolated')
+  elif '--host' not in args or args[args.index('--host')+1]!='127.0.0.1':raise RuntimeError('Beta native host must be loopback')
   for flag in ['--kv-disk-dir','--ssd-root','--paged-ssd-cache-dir','--base-path','--log-file']:
    if flag in args and not Path(args[args.index(flag)+1]).resolve().is_relative_to(ROOT.resolve()):raise RuntimeError('Beta storage points outside beta data')
 
 def stable_idle():
  private=json.loads((ROOT/'private/priority.json').read_text());password=Path(private['passwordFile']).read_text().strip()
- opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
- req=urllib.request.Request('http://127.0.0.1:30143/api/web-auth',json.dumps({'password':password}).encode(),{'Content-Type':'application/json','Origin':'http://127.0.0.1:30143'})
+ opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+ headers={'Authorization':'Basic '+base64.b64encode(('pi:'+password).encode()).decode()}
+ req=urllib.request.Request('http://127.0.0.1:30143/api/agent/running',headers=headers)
  try:
-  with opener.open(req,timeout=3)as r:r.read()
-  with opener.open('http://127.0.0.1:30143/api/agent/running',timeout=3)as r:running=json.load(r)['runningSessionIds']
+  with opener.open(req,timeout=3)as r:running=json.load(r)['runningSessionIds']
  except Exception:raise RuntimeError('无法核实稳定版状态，未启动测试推理')from None
  if not isinstance(running,list):raise RuntimeError('稳定版状态格式无效，未启动测试推理')
  if running:raise RuntimeError('稳定版正在执行任务，测试推理已让出资源；没有取消稳定任务')

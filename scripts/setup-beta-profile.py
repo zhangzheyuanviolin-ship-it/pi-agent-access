@@ -46,6 +46,7 @@ def main():
  for m in catalog:
   storage=ROOT/'models'/str(m['port']);(storage/'cache/ssd').mkdir(parents=True,mode=0o700);(storage/'state').mkdir(mode=0o700)
  write_private(ROOT/'private/model-catalog.json',catalog)
+ write_private(ROOT/'private/config.local.json',{'max_body_bytes':128*1024**2})
  write_private(ROOT/'private/priority.json',{'passwordFile':str(BRIDGE/'private/pi-web-password.txt')})
  python=HOME/'LocalAI/Omni-Deployment-20261103/mlx-omni-venv/bin/python'
  write_private(ROOT/'private/launcher.json',{'python':str(python)})

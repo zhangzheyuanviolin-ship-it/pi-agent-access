@@ -29,6 +29,14 @@ class Isolation(unittest.TestCase):
   with patch.object(beta,'stable_idle',side_effect=RuntimeError('stable busy')),patch.object(beta.core.Manager,'ensure')as parent:
    with self.assertRaisesRegex(RuntimeError,'stable busy'):manager.ensure(self.model)
    parent.assert_not_called()
+ def test_omni_native_port_and_config_outputs_are_isolated(self):
+  config=self.root/'mini.json';config.write_text(json.dumps({'native_port':12452,'output_dir':str(self.root/'audio'),'engine_log':str(self.root/'native.log')}))
+  model={'id':'MiniCPM-o-4.5-F16','engine':'omni','port':12454,'args':['python',str(Path(beta.__file__).resolve().parents[1]/'local-omni/backend.py'),'--engine','minicpm','--config',str(config),'--port','12454']}
+  beta.validate_catalog([model])
+  for change in [{'native_port':12352},{'native_port':12449},{'output_dir':'/stable/audio'}]:
+   value=json.loads(config.read_text());original=dict(value);value.update(change);config.write_text(json.dumps(value))
+   with self.assertRaises(RuntimeError):beta.validate_catalog([model])
+   config.write_text(json.dumps(original))
  def test_matching_port_without_owned_child_is_not_adopted(self):
   manager=beta.BetaManager([self.model],Path('/unused'))
   with patch.object(beta,'stable_idle'),patch.object(beta.core,'owner_pid',return_value=99999),patch.object(beta.core.Manager,'ensure')as parent:

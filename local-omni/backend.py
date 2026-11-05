@@ -4,7 +4,7 @@ Weights are loaded only in this dedicated process; the shared gateway must first
 release other idle backends. No system settings, shell commands or autostart.
 """
 from pathlib import Path
-import argparse, asyncio, base64, contextlib, json, os, subprocess, tempfile, threading, time, uuid
+import argparse, asyncio, base64, contextlib, json, os, socket, subprocess, tempfile, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from aiohttp import web, ClientSession, WSMsgType, ClientConnectionError
 from protocol import MODELS, data_payload, tool_calls, validate_request, minicpm_tool_messages
@@ -56,18 +56,25 @@ class Backend:
             args = [self.config['binary'], '--host', '127.0.0.1', '--port', str(self.config['native_port']),
                     '-m', self.config['model_path'], '--ctx-size', str(self.config.get('context', 32768)),
                     '-ngl', '99', '--temp', '0.1', '--repeat-penalty', '1.05']
-            log = open(self.config['engine_log'], 'ab', buffering=0)
             env = dict(os.environ)
             env['PATH'] = str(Path(self.config['ffmpeg']).parent) + os.pathsep + env.get('PATH', '')
-            self.child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log, env=env)
-            log.close()
+            if os.environ.get('PI_ACCESS_PROFILE')=='beta':
+                with socket.socket() as port_check:
+                    try:port_check.bind(('127.0.0.1',self.config['native_port']))
+                    except OSError:raise RuntimeError('MiniCPM测试原生端口已占用；未接管或停止现有服务') from None
+            with open(self.config['engine_log'], 'ab', buffering=0) as log:
+                self.child = subprocess.Popen(args, stdin=subprocess.DEVNULL, stdout=log, stderr=log, env=env)
             import urllib.request
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             for _ in range(300):
                 if self.child.poll() is not None: raise RuntimeError('MiniCPM backend exited while loading')
                 try:
                     with opener.open(f"http://127.0.0.1:{self.config['native_port']}/health", timeout=1) as r:
-                        if r.status == 200: break
+                        if r.status == 200:
+                            if os.environ.get('PI_ACCESS_PROFILE')=='beta':
+                                owners=subprocess.check_output(['/usr/sbin/lsof','-nP','-tiTCP:'+str(self.config['native_port']),'-sTCP:LISTEN'],text=True,timeout=5).split()
+                                if owners!=[str(self.child.pid)] or self.child.poll() is not None:raise RuntimeError('MiniCPM原生端口进程归属不符')
+                            break
                 except OSError: time.sleep(.2)
             else: raise RuntimeError('MiniCPM backend did not become ready')
     def stop(self):

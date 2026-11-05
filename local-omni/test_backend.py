@@ -69,4 +69,18 @@ class HttpTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.1)
         self.assertTrue(finished.is_set());self.assertFalse(self.backend.busy)
 
+class BetaNativeOwnershipTest(unittest.TestCase):
+    def test_occupied_native_port_never_spawns_or_attaches(self):
+        from backend import Backend
+        from unittest.mock import patch
+        import socket,tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory()as tmp,socket.socket()as listener:
+            listener.bind(('127.0.0.1',0));listener.listen()
+            config={'binary':'/unused','native_port':listener.getsockname()[1],'model_path':'/unused','engine_log':str(Path(tmp)/'engine.log'),'ffmpeg':'/unused/ffmpeg'}
+            model=Backend('minicpm',config)
+            with patch.dict('os.environ',{'PI_ACCESS_PROFILE':'beta'}),patch('backend.preflight',return_value={}),patch('backend.subprocess.Popen')as spawn:
+                with self.assertRaisesRegex(RuntimeError,'端口已占用'):model.start()
+                spawn.assert_not_called()
+
 if __name__=='__main__':unittest.main(verbosity=2)
