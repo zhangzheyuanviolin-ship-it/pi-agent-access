@@ -408,7 +408,7 @@
     },
     {
       "id": "R09-BETA-RESOURCE-ADMISSION",
-      "requirement": "测试准入只计算真实空闲与speculative页，不把inactive模型页当空闲。默认零交换；小模型显式允许最多32MiB静态历史交换时，仍须正常压力、两次无新换出、完整内存保留与64KiB音频mlock。资源不足不回收稳定模型、不改系统设置。",
+      "requirement": "测试准入分开报告真实空闲与受inactive/file-backed双重上限约束的文件缓存估计，不把全部匿名inactive模型/KV页当空闲。默认零交换；小模型显式允许最多32MiB静态历史交换时，仍须正常压力、两次无新换出、完整内存保留与64KiB音频mlock。资源不足不回收稳定模型、不改系统设置。Pageouts文件页回写不能冒充匿名Swapouts；记录两者，只有新Swapouts/交换用量增长构成交换拒绝条件，仍必须检查压力、保留与音频锁定。",
       "test": "beta-runtime/test_resource_admission.py",
       "group": "runtime",
       "historicalEvidence": "golden-and-omni-beta-20261105/mini-beta-audio-probe.log",
@@ -420,6 +420,22 @@
       "test": "scripts/verify-access-release-gate.test.mjs + scripts/build-beta.mjs",
       "group": "release",
       "historicalEvidence": "golden-and-omni-beta-20261105/gateway-stage-drift-detected.json",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "O01-OMNI-SPEECH-SYSTEM",
+      "requirement": "全模态语音回复保留调用方完整system/全局记忆/工具说明，音色模板不得替换系统上下文。原生引擎必须使用包含全部已验证适配修复的独立构建，不能退回旧service默认二进制。",
+      "test": "local-omni/test_backend.py + native system nonce speech acceptance",
+      "group": "memory",
+      "historicalEvidence": "golden-and-omni-beta-20261105/mini-system-voice-before-fix.json",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "O02-OMNI-VOICE-DELIVERY-PREFIX",
+      "requirement": "语音下载链接属于生成后的交付元数据，必须追加到原生KV而不改写既有前缀；拥有的精确链接与正文核验后保留全部内容，未知/被编辑内容不得忽略。连续语音回复须真实cacheRead>0；工具调用轮不交付或朗读工具JSON，最终正文与语音链接顺序一致。",
+      "test": "local-omni/test_minicpm_session.py + local-omni/test_backend.py",
+      "group": "prefix",
+      "historicalEvidence": "golden-and-omni-beta-20261105/mini-voice-delivery-cache-before-fix.json",
       "requiresLiveEvidence": true
     }
   ],

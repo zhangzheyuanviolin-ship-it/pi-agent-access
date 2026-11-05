@@ -1,5 +1,5 @@
 import{validateHistoricalGate,runtimeFingerprint}from'./historical-release-gate.mjs';
-import{readFileSync,existsSync,statSync,readdirSync}from'node:fs';import{resolve,relative}from'node:path';import{fileURLToPath}from'node:url';import{createHash}from'node:crypto';import{execFileSync}from'node:child_process';
+import{readFileSync,existsSync,statSync,readdirSync,realpathSync}from'node:fs';import{resolve,relative}from'node:path';import{fileURLToPath}from'node:url';import{homedir}from'node:os';import{createHash}from'node:crypto';import{execFileSync}from'node:child_process';
 const root=resolve(fileURLToPath(new URL('..',import.meta.url)));
 export const REQUIRED=['local_models','terminal','computer_driver','computer_model','video_cloud_mobile','memory_defaults','deepseek_repeat_load_cache','memory_admission_boundaries','historical_regression_suite','mcp_prefix_lifecycle','idle_cache_interval_recovery','accessibility_resource_monitor','network_download_preserved'];
 export function sourceFingerprint(directory=root){
@@ -13,9 +13,28 @@ export function validateGate(g,{sourceDigest,now=Date.now(),verifyEvidence=true,
  }catch{errors.push('beta model roster unavailable');}
 }else if(g?.localModelCount!==7)errors.push('local model roster changed; update gate coverage');
 if(g?.distributionProfile!==undefined&&!['stable','beta'].includes(g.distributionProfile))errors.push('unknown distribution profile');return errors;}
+export function validateBetaEngineBindings(g,{dataRoot=resolve(homedir(),'Library/Application Support/Pi Agent Access Beta'),sourceDirectory=root}={}){
+ const errors=[];if(g?.distributionProfile!=='beta'||!g.modelIds?.includes('MiniCPM-o-4.5-F16'))return errors;
+ const evidence={};for(const id of ['beta_minicpm_config','beta_minicpm_engine_pin','beta_minicpm_binary']){
+  const e=g.runtimeEvidence?.find(x=>x.id===id);
+  try{if(!e||createHash('sha256').update(readFileSync(e.path)).digest('hex')!==e.sha256)errors.push(id+': native runtime missing or changed');else evidence[id]=e;}catch{errors.push(id+': native runtime unavailable');}
+ }
+ if(errors.length)return errors;
+ try{
+  if(resolve(evidence.beta_minicpm_config.path)!==resolve(dataRoot,'private/minicpm.json')||resolve(evidence.beta_minicpm_engine_pin.path)!==resolve(dataRoot,'private/minicpm-engine.json'))throw Error('proof selected another native profile');
+  const config=JSON.parse(readFileSync(evidence.beta_minicpm_config.path));const pin=JSON.parse(readFileSync(evidence.beta_minicpm_engine_pin.path));
+  const binary=realpathSync(pin.binary),build=realpathSync(pin.buildRoot),native=realpathSync(resolve(dataRoot,'native'));
+  if(!build.startsWith(native+'/')||!binary.startsWith(build+'/')||realpathSync(config.binary)!==binary||realpathSync(evidence.beta_minicpm_binary.path)!==binary||pin.sha256!==evidence.beta_minicpm_binary.sha256)throw Error('native engine/config binding differs');
+  if(config.native_port!==12452||!resolve(config.output_dir).startsWith(resolve(dataRoot)+'/'))throw Error('native media paths or port differ');
+  const manifestDigest=createHash('sha256').update(readFileSync(resolve(sourceDirectory,'local-engines/minicpm-beta-source.json'))).digest('hex');
+  if(pin.sourceManifestSha256!==manifestDigest||!pin.runtimeFiles?.length)throw Error('native reviewed source/runtime manifest differs');
+  for(const file of pin.runtimeFiles){if(!realpathSync(file.path).startsWith(build+'/')||createHash('sha256').update(readFileSync(file.path)).digest('hex')!==file.sha256)throw Error('native runtime dependency changed');}
+ }catch(e){errors.push('beta native binding: '+e.message);}
+ return errors;
+}
 export function validateGateTargets(g,{sourceDirectory=root,runtimeDirectory=resolve(root,'src-tauri/resources/server')}={}){
  const errors=[];if(resolve(g.sourceDirectory??root)!==resolve(sourceDirectory))errors.push('tested source differs from packaging source');
  if(resolve(g.runtimeDirectory??'')!==resolve(runtimeDirectory))errors.push('tested runtime differs from activation/packaging target');return errors;
 }
 
-if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{const p=process.argv[2]||process.env.PI_RELEASE_GATE_FILE;if(!p)throw Error('Release gate file required; no stable release without live regression evidence');const g=JSON.parse(readFileSync(p,'utf8'));const option=name=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1];};const sourceDirectory=option('--source-dir')??root;const runtimeDirectory=option('--runtime-dir')??resolve(root,'src-tauri/resources/server');const errors=[...validateGateTargets(g,{sourceDirectory,runtimeDirectory}),...validateGate(g,{sourceDigest:sourceFingerprint(sourceDirectory),sourceDirectory})];if(g.activationPolicyVersion!==2)errors.push('S0 activation policy missing');errors.push(...validateHistoricalGate(g,{runtimeDigest:runtimeFingerprint(runtimeDirectory)}));for(const id of ['model_catalog','deepseek_binary','browser_registration','shared_server']){const e=g.runtimeEvidence?.find(x=>x.id===id);try{if(!e||createHash('sha256').update(readFileSync(e.path)).digest('hex')!==e.sha256)errors.push(id+': live runtime changed');if(id==='model_catalog'&&e){const ids=JSON.parse(readFileSync(e.path,'utf8')).map(x=>x.id).sort();if(JSON.stringify(ids)!==JSON.stringify([...(g.modelIds??[])].sort()))errors.push('configured model coverage changed');}}catch{errors.push(id+': live runtime unavailable');}}if(errors.length)throw Error(errors.join('; '));console.log('RELEASE_GATE_PASSED '+g.sourceDigest);}catch(e){console.error('RELEASE_GATE_BLOCKED: '+e.message);process.exitCode=1;}}
+if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)){try{const p=process.argv[2]||process.env.PI_RELEASE_GATE_FILE;if(!p)throw Error('Release gate file required; no stable release without live regression evidence');const g=JSON.parse(readFileSync(p,'utf8'));const option=name=>{const i=process.argv.indexOf(name);return i<0?undefined:process.argv[i+1];};const sourceDirectory=option('--source-dir')??root;const runtimeDirectory=option('--runtime-dir')??resolve(root,'src-tauri/resources/server');const errors=[...validateGateTargets(g,{sourceDirectory,runtimeDirectory}),...validateGate(g,{sourceDigest:sourceFingerprint(sourceDirectory),sourceDirectory})];if(g.activationPolicyVersion!==2)errors.push('S0 activation policy missing');errors.push(...validateHistoricalGate(g,{runtimeDigest:runtimeFingerprint(runtimeDirectory)}));errors.push(...validateBetaEngineBindings(g,{sourceDirectory}));for(const id of ['model_catalog','deepseek_binary','browser_registration','shared_server']){const e=g.runtimeEvidence?.find(x=>x.id===id);try{if(!e||createHash('sha256').update(readFileSync(e.path)).digest('hex')!==e.sha256)errors.push(id+': live runtime changed');if(id==='model_catalog'&&e){const ids=JSON.parse(readFileSync(e.path,'utf8')).map(x=>x.id).sort();if(JSON.stringify(ids)!==JSON.stringify([...(g.modelIds??[])].sort()))errors.push('configured model coverage changed');}}catch{errors.push(id+': live runtime unavailable');}}if(errors.length)throw Error(errors.join('; '));console.log('RELEASE_GATE_PASSED '+g.sourceDigest);}catch(e){console.error('RELEASE_GATE_BLOCKED: '+e.message);process.exitCode=1;}}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Explicit dev registration in the isolated beta profile; no process is started."""
-import argparse,json,os,sys
+import argparse,hashlib,json,os,sys
 from pathlib import Path
 ROOT=Path.home()/'Library/Application Support/Pi Agent Access Beta'
 p=argparse.ArgumentParser();p.add_argument('--server-root',type=Path,required=True);p.add_argument('--make-default',action='store_true');a=p.parse_args();server=a.server_root.resolve()
@@ -8,6 +8,10 @@ if not(server/'local-omni/backend.py').is_file():raise SystemExit('Actual packag
 if not(ROOT/'private/model-catalog.json').is_file():raise SystemExit('Create independent beta profile first')
 os.umask(0o077);sys.path.insert(0,str(server/'beta-runtime'));import beta_gateway
 config=json.loads((Path.home()/'LocalAI/Omni-Deployment-20261103/service/minicpm.json').read_text())
+pin=json.loads((ROOT/'private/minicpm-engine.json').read_text());binary=Path(pin['binary']).resolve()
+manifest=Path(__file__).resolve().parents[1]/'local-engines/minicpm-beta-source.json'
+if not binary.is_relative_to((ROOT/'native').resolve())or hashlib.sha256(binary.read_bytes()).hexdigest()!=pin['sha256']or hashlib.sha256(manifest.read_bytes()).hexdigest()!=pin['sourceManifestSha256']:raise SystemExit('Beta native engine pin does not match reviewed source/runtime; no legacy fallback')
+config['binary']=str(binary)
 config.update(native_port=12452,engine_log=str(ROOT/'private/minicpm-native.log'),output_dir=str(ROOT/'audio'),minimum_available_bytes=32*1024**3,maximum_existing_swap_bytes=32*1024**2,tools_verified=False)
 config_path=ROOT/'private/minicpm.json'
 def write(path,value):

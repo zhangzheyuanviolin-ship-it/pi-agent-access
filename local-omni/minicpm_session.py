@@ -6,6 +6,7 @@ The next request replays its complete supplied content in a fresh native session
 """
 import hashlib
 import json
+import re
 import time
 
 
@@ -26,11 +27,31 @@ def message_hash(message):
                                      separators=(',', ':')).encode()).hexdigest()
 
 
+DELIVERY_SUFFIX=re.compile(r'\n\n\[播放或下载语音\]\(/api/local-omni/audio/([0-9a-f]{32}\.wav)\)$')
+def project_delivery_messages(messages,deliveries):
+    """Append owned UI delivery metadata as its own turn, preserving native KV.
+
+    The generated answer is already in native KV; the URI is added by Pi after
+    generation. Split only an exact backend-owned suffix and matching answer
+    hash. No text is discarded, history is untouched, and edits still replay.
+    """
+    result=[]
+    for message in messages:
+        row=dict(message);row.pop('_pi_delivery_meta',None)
+        text=row.get('content');match=DELIVERY_SUFFIX.search(text)if row.get('role')=='assistant'and isinstance(text,str)else None
+        if match and deliveries.get(match[1])==hashlib.sha256(text[:match.start()].encode()).hexdigest():
+            result.append({**row,'content':text[:match.start()]})
+            result.append({'role':'assistant','content':text[match.start():],'_pi_delivery_meta':True})
+        else:result.append(row)
+    return result
+
+
 class MiniCPMSession:
-    def __init__(self, port, connect=None):
+    def __init__(self, port, connect=None, after_init=None):
         if connect is None:
             from websockets.sync.client import connect
         self.connect = connect
+        self.after_init = after_init
         self.url = f'ws://127.0.0.1:{port}/backend'
         self.ws = None
         self.prefix = []
@@ -49,7 +70,7 @@ class MiniCPMSession:
         return bool(self.ws is not None and speech == self.speech and self.prefix
                     and tool_key == self.tool_key
                     and len(messages) > len(self.prefix)
-                    and all(m.get('role') in ('user','tool') for m in messages[len(self.prefix):])
+                    and all(m.get('role') in ('user','tool') or (m.get('role')=='assistant' and m.get('_pi_delivery_meta')is True) for m in messages[len(self.prefix):])
                     and [message_hash(m) for m in messages[:len(self.prefix)]] == self.prefix)
 
     def events(self, messages, normalize, speech=False, max_tokens=1024, cancel=None, tools=None, assistant_message=None):
@@ -58,7 +79,9 @@ class MiniCPMSession:
         prefix_length=len(self.prefix)
         cached = self.kv_length if reuse else 0
         reason = 'exact_append' if reuse else ('prefix_or_mode_changed' if self.ws else 'cold')
+        init_ms=0.0
         if not reuse:
+            init_started=time.monotonic()
             self.close()
             self.ws = self.connect(self.url, proxy=None, open_timeout=10,
                                    max_size=64*1024*1024, close_timeout=10)
@@ -70,6 +93,11 @@ class MiniCPMSession:
             if created.get('type') != 'session.created':
                 self.close()
                 raise RuntimeError(str(created))
+            try:
+                if self.after_init:self.after_init()
+            except Exception:
+                self.close();raise
+            init_ms=(time.monotonic()-init_started)*1000
         complete = False
         text = ''
         try:
@@ -97,6 +125,7 @@ class MiniCPMSession:
                     metrics = event.setdefault('metrics', {})
                     self.kv_length = metrics.get('kv_cache_length', 0)
                     metrics['prompt_tokens_details'] = {'cached_tokens': cached}
+                    metrics['native_session_init_ms'] = init_ms
                     metrics['native_prefix_reused'] = reuse
                     metrics['native_prefix_reason'] = reason
                     reply=assistant_message(text) if assistant_message else {'role':'assistant','content':text}

@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "upstream": "https://github.com/OpenBMB/llama.cpp-omni",
+  "baseCommit": "a64932ec615e1463158129feaf2f0752d0c07a2e",
+  "files": {
+    "tools/omni/omni.cpp": "ef727003deed679909082e0370d61e9d48712e66563e8390ba860f80a413eaba",
+    "tools/omni/omni.h": "ea94aa724651665504e396c6b538d39f1bfc46111406879c255b8a616d1d58a1",
+    "tools/server/protocol.cpp": "5497782de9d51dfcaa8152203e0d8261c1fb5879d3eb6bb4be228e722caab6fe",
+    "tools/server/protocol.h": "05b709789688ebe63ddf5897275564cf2174811b0737e1e9400513bcc6e05c01",
+    "tools/server/server-omni.cpp": "db68d64d0a46a2744eea708aabe740c291fb2f2c58205da5bfc3220ab7be54c3",
+    "tools/server/ws_handler.cpp": "f4ff66b939eba97160edf987717208c4d8a76ba26649a354463b047c91423574"
+  },
+  "requiredBehavior": "Preserve all paused Pi adapters; keep system/tools/memory in speech templates; no stock/old binary fallback",
+  "scope": "Local Pi integration patch; not an upstream submission",
+  "buildOptions": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "GGML_METAL": "ON",
+    "GGML_METAL_EMBED_LIBRARY": "ON",
+    "LLAMA_CURL": "OFF",
+    "LLAMA_OPENSSL": "OFF"
+  }
+}

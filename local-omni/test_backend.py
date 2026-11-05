@@ -51,6 +51,29 @@ class HttpTest(unittest.IsolatedAsyncioTestCase):
         async with self.client.post(self.url+'/v1/chat/completions',json=self.body())as r:self.assertEqual(r.status,429)
         self.backend.busy=False
         async with self.client.post(self.url+'/v1/chat/completions',json=self.body(tools=[{'type':'function'}]))as r:self.assertEqual(r.status,400)
+    async def test_tool_request_never_delivers_generated_speech_as_final_answer(self):
+        self.backend.config={**self.backend.config,'tools_verified':True}
+        def events(body,cancel):
+            yield {'type':'audio','audio':base64.b64encode(b'\0'*100).decode()}
+            yield {'type':'done','assistant_message':{'role':'assistant','content':'','tool_calls':[{'id':'call_fixture','type':'function','function':{'name':'lookup','arguments':'{}'}}]}}
+        self.backend.events=events
+        async with self.client.post(self.url+'/v1/chat/completions',json=self.body(stream=True,pi_audio_delivery=True,tools=[{'type':'function','function':{'name':'lookup','parameters':{'type':'object'}}}]))as response:
+            text=await response.text();self.assertIn('tool_calls',text);self.assertNotIn('"audio"',text);self.assertNotIn('播放或下载语音',text)
+    async def test_speech_file_link_follows_answer_in_buffered_tool_stream(self):
+        import tempfile,hashlib
+        with tempfile.TemporaryDirectory()as tmp:
+            self.backend.config={**self.backend.config,'tools_verified':True,'output_dir':tmp};self.backend.deliveries={}
+            def events(body,cancel):
+                yield {'type':'text','text':'spoken answer'}
+                yield {'type':'audio','audio':base64.b64encode(b'\0'*100).decode()}
+                yield {'type':'done','assistant_message':{'role':'assistant','content':'spoken answer'}}
+            self.backend.events=events
+            async with self.client.post(self.url+'/v1/chat/completions',json=self.body(stream=True,pi_audio_delivery=True,tools=[{'type':'function','function':{'name':'lookup','parameters':{'type':'object'}}}]))as response:
+                text=await response.text()
+            frames=[json.loads(line[6:])for line in text.splitlines()if line.startswith('data: {')]
+            content=''.join(frame['choices'][0]['delta'].get('content','')for frame in frames if frame['choices'])
+            self.assertTrue(content.startswith('spoken answer\n\n[播放或下载语音]'),content)
+            self.assertEqual(list(self.backend.deliveries.values()),[hashlib.sha256(b'spoken answer').hexdigest()])
     async def test_error_never_success(self):
         def fail(body,cancel): raise RuntimeError('fixture fail');yield
         self.backend.events=fail

@@ -15,8 +15,8 @@ not permitted from beta. Gateway 12449 owns only its explicitly spawned native
 process groups on dedicated 124xx ports. It refuses unknown occupied ports even
 if they advertise the expected model ID. It never calls stable model unload.
 
-Conservative resource admission checks stable tasks, genuinely free memory (no
-inactive model pages), swap activity, normal kernel pressure and
+Conservative resource admission checks stable tasks, available memory (genuinely free pages plus a file-cache allowance bounded by
+both inactive and file-backed totals; never all anonymous inactive model pages), swap activity, normal kernel pressure and
 audio mlock. Admission refusal is not model acceptance and must not be bypassed
 just to complete a test. Stable requests do not wait for beta acceptance gates.
 
@@ -35,8 +35,21 @@ as a new beta cache test. Keep original failures and distinguish inherited cold
 loopback/SSE recovery from the already accepted remote-mobile behavior.
 
 A small model may explicitly allow up to 32MiB of static residual swap, only
-with two unchanged pageout/swapout samples, normal pressure, its full free-memory
+with two unchanged anonymous Swapouts/swap-usage samples, normal pressure, its full available-memory
 reserve, and a successful audio mlock. Default remains zero. This avoids requiring
 a system reboot merely for historical 7MiB swap; it never relaxes large-model
 reserves or changes stable admission. Evidence must retain both refusals and
 resource readings. Do not increase the cap to force a model to load.
+
+The file-cache allowance is an estimate, recorded separately from genuinely free
+bytes. A stopped Mini model and downloaded weight files leave clean filesystem
+pages behind; treating all such pages as unavailable would prevent the next
+model load despite normal pressure. No per-model reserve or swap cap is lowered.
+
+On macOS vm_stat, Pageouts includes external/file-backed pager activity and is
+not interchangeable with compressor Swapouts. Keep Pageouts as diagnostics;
+reject new Swapouts, increasing swap usage, abnormal kernel pressure or a failed
+audio mlock. Apple system_cmds vm_stat.c subtracts speculative_count from its
+printed Pages free, so adding printed free + speculative does not double count.
+Primary definitions: apple-oss-distributions/xnu osfmk/mach/vm_statistics.h and
+osfmk/vm/vm_pageout.c; system_cmds/vm_stat/vm_stat.c.

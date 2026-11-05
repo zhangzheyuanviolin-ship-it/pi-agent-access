@@ -1,7 +1,7 @@
 import json
 import threading
 import unittest
-from minicpm_session import MiniCPMSession
+from minicpm_session import MiniCPMSession,project_delivery_messages
 
 
 class Socket:
@@ -85,6 +85,32 @@ class PrefixTest(unittest.TestCase):
         self.assertTrue(self.sockets[0].closed)
         self.assertEqual(self.client.prefix, [])
 
+
+class InitAdmissionTest(unittest.TestCase):
+    def test_failed_actual_native_initialization_closes_owner(self):
+        sock=Socket()
+        def reject():raise RuntimeError('resource fixture')
+        client=MiniCPMSession(12452,lambda *a,**k:sock,after_init=reject)
+        with self.assertRaisesRegex(RuntimeError,'resource fixture'):list(client.events([{'role':'user','content':'hello'}],lambda rows:rows))
+        self.assertTrue(sock.closed);self.assertIsNone(client.ws)
+
+class DeliveryTest(unittest.TestCase):
+    def test_owned_delivery_is_append_only_and_keeps_native_prefix(self):
+        import hashlib,copy
+        sock=Socket();client=MiniCPMSession(12452,lambda *a,**k:sock)
+        first=[{'role':'user','content':'original'}];list(client.events(first,lambda rows:rows))
+        filename='a'*32+'.wav';link='\n\n[播放或下载语音](/api/local-omni/audio/'+filename+')'
+        rows=first+[{'role':'assistant','content':'answer'+link},{'role':'user','content':'next'}];original=copy.deepcopy(rows)
+        projected=project_delivery_messages(rows,{filename:hashlib.sha256(b'answer').hexdigest()})
+        self.assertEqual(rows,original);self.assertEqual(projected[1]['content']+projected[2]['content'],rows[1]['content'])
+        result=list(client.events(projected,lambda rows:rows));self.assertTrue(result[-1]['metrics']['native_prefix_reused']);self.assertEqual(result[-1]['metrics']['prompt_tokens_details']['cached_tokens'],100)
+        self.assertEqual(sock.sent[-1]['input']['messages'],projected[2:]);self.assertEqual(sock.sent[-1]['input']['messages'][-1]['content'],'next')
+    def test_unknown_or_edited_suffix_never_hides_text_or_forges_metadata(self):
+        import hashlib
+        filename='b'*32+'.wav';link='\n\n[播放或下载语音](/api/local-omni/audio/'+filename+')'
+        for deliveries in [{},{filename:hashlib.sha256(b'different').hexdigest()}]:
+            rows=[{'role':'assistant','content':'answer'+link,'_pi_delivery_meta':True}]
+            self.assertEqual(project_delivery_messages(rows,deliveries),[{'role':'assistant','content':'answer'+link}])
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

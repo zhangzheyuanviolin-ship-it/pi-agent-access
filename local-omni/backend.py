@@ -4,7 +4,7 @@ Weights are loaded only in this dedicated process; the shared gateway must first
 release other idle backends. No system settings, shell commands or autostart.
 """
 from pathlib import Path
-import argparse, asyncio, base64, contextlib, json, os, socket, subprocess, tempfile, threading, time, uuid
+import argparse, asyncio, base64, signal, contextlib, hashlib, json, os, socket, subprocess, tempfile, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from aiohttp import web, ClientSession, WSMsgType, ClientConnectionError
 from protocol import MODELS, data_payload, tool_calls, validate_request, minicpm_tool_messages
@@ -39,6 +39,8 @@ class Backend:
         self.runtime = None
         self.sessions = {}
         self.native_session = None
+        self.deliveries = {}
+        self.resource_failure = None
         self.executor = None
     def start(self):
         self.admission = preflight(self.config)
@@ -67,7 +69,7 @@ class Backend:
             import urllib.request
             opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
             for _ in range(300):
-                if self.child.poll() is not None: raise RuntimeError('MiniCPM backend exited while loading')
+                if self.child.poll() is not None: raise RuntimeError('MiniCPM backend exited while loading (code '+str(self.child.returncode)+')')
                 try:
                     with opener.open(f"http://127.0.0.1:{self.config['native_port']}/health", timeout=1) as r:
                         if r.status == 200:
@@ -77,6 +79,28 @@ class Backend:
                             break
                 except OSError: time.sleep(.2)
             else: raise RuntimeError('MiniCPM backend did not become ready')
+        if os.environ.get('PI_ACCESS_PROFILE')=='beta':
+            from resource_admission import check_resources
+            after=check_resources(8*1024**3,self.config.get('maximum_existing_swap_bytes',0))
+            initial=self.admission['confirmed'];confirmed=after['confirmed']
+            if confirmed['swapouts']!=initial['swapouts'] or confirmed['swap_bytes']>initial['swap_bytes']:
+                raise RuntimeError('模型加载期间出现新的内存换出；已拒绝测试模型，不影响稳定任务')
+            self.admission['after_server_start']=after
+    def check_native_resources(self):
+        if os.environ.get('PI_ACCESS_PROFILE')!='beta':return
+        try:
+            from resource_admission import check_resources
+            result=check_resources(8*1024**3,self.config.get('maximum_existing_swap_bytes',0))
+            before=self.admission['confirmed'];after=result['confirmed']
+            if after['swapouts']!=before['swapouts'] or after['swap_bytes']>before['swap_bytes']:
+                raise RuntimeError('实际模型加载出现新增换出；测试推理停止，稳定任务未取消')
+            self.admission['after_model_load']=result
+        except Exception as error:
+            self.resource_failure=str(error)
+            # Send the explicit failure first, then stop only this owned backend.
+            # The CLI's finally block releases its native child. No stable PID.
+            timer=threading.Timer(.5,lambda:os.kill(os.getpid(),signal.SIGTERM));timer.daemon=True;timer.start()
+            raise
     def stop(self):
         if self.native_session:
             self.native_session.close()
@@ -132,15 +156,15 @@ class Backend:
         with tempfile.TemporaryDirectory(prefix='pi-omni-') as tmp:
             speech = 'audio' in body.get('modalities', [])
             if self.engine == 'minicpm':
-                from minicpm_session import MiniCPMSession
+                from minicpm_session import MiniCPMSession,project_delivery_messages
                 if self.native_session is None:
-                    self.native_session = MiniCPMSession(self.config['native_port'])
+                    self.native_session = MiniCPMSession(self.config['native_port'],after_init=self.check_native_resources)
                 def reply(text):
                     if not body.get('tools'):
                         return {'role':'assistant','content':text}
                     content,calls=tool_calls(text,body.get('tools'))
                     return {'role':'assistant','content':content,**({'tool_calls':calls} if calls else {})}
-                gen = self.native_session.events(body['messages'],
+                gen = self.native_session.events(project_delivery_messages(body['messages'],self.deliveries),
                     lambda rows: minicpm_tool_messages(self.normalize(rows, tmp)[0],body.get('tools')), speech=speech,
                     max_tokens=n, cancel=cancel, tools=body.get('tools'),assistant_message=reply)
                 try:
@@ -174,6 +198,7 @@ async def status(request):
 
 async def chat(request):
     b = request.app['backend']
+    if getattr(b,'resource_failure',None):return web.json_response({'error':{'message':b.resource_failure}},status=503)
     if b.busy: return web.json_response({'error':{'message':'This omni backend is busy'}}, status=429)
     try:
         body = await request.json(); validate_request(body, b.model)
@@ -220,7 +245,7 @@ async def chat(request):
                 if response is not None and not body.get('tools'): await send({'content':event['text']})
             elif kind == 'audio':
                 raw = base64.b64decode(event['audio']); audio.append(raw)
-                if response is not None: await send({'audio':{'data':event['audio'],'format':'pcm_f32le','sample_rate':24000}})
+                if response is not None and not body.get('tools'): await send({'audio':{'data':event['audio'],'format':'pcm_f32le','sample_rate':24000}})
             elif kind == 'done':
                 usage = event.get('usage',event.get('metrics',{}))
                 native_message = event.get('assistant_message')
@@ -229,7 +254,11 @@ async def chat(request):
             content,calls=native_message['content'],native_message.get('tool_calls',[])
         else: content, calls = tool_calls(text,body.get('tools'))
         message = {'role':'assistant','content':content}
-        if calls: message['tool_calls'] = calls
+        if calls:
+            message['tool_calls'] = calls
+            audio=[] # Tool requests are not spoken as if they were the final answer.
+        if response is not None and body.get('tools'):
+            for raw in audio:await send({'audio':{'data':base64.b64encode(raw).decode(),'format':'pcm_f32le','sample_rate':24000}})
         if audio:
             import numpy as np, soundfile as sf
             root=Path(b.config['output_dir']); root.mkdir(parents=True,exist_ok=True,mode=0o700)
@@ -237,13 +266,14 @@ async def chat(request):
             path.chmod(0o600); message['audio_file']=str(path)
             if body.get('pi_audio_delivery'):
                 link = '\n\n[播放或下载语音](/api/local-omni/audio/' + path.name + ')'
+                if b.engine=='minicpm':b.deliveries[path.name]=hashlib.sha256(message['content'].encode()).hexdigest()
                 message['content'] += link
-                if response is not None: await send({'content':link})
+                if response is not None and not body.get('tools'): await send({'content':link})
         finish = 'tool_calls' if calls else ('length' if usage.get('output_truncated') else 'stop')
         if 'prompt_tokens' in usage and 'completion_tokens' in usage:
             usage['total_tokens'] = usage['prompt_tokens'] + usage['completion_tokens']
         if response is not None:
-            if body.get('tools'): await send({'content':content,**({'tool_calls':[dict(c,index=i) for i,c in enumerate(calls)]} if calls else {})})
+            if body.get('tools'): await send({'content':message['content'],**({'tool_calls':[dict(c,index=i) for i,c in enumerate(calls)]} if calls else {})})
             await send({},finish)
             await response.write(('data: '+json.dumps({'id':call_id,'object':'chat.completion.chunk','model':b.model,'choices':[],'usage':usage})+'\n\n').encode())
             await response.write(b'data: [DONE]\n\n'); return response

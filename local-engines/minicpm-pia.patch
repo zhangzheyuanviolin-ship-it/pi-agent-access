@@ -1,0 +1,478 @@
+diff --git a/tools/omni/omni.cpp b/tools/omni/omni.cpp
+index d3d351b..2415950 100644
+--- a/tools/omni/omni.cpp
++++ b/tools/omni/omni.cpp
+@@ -5086,8 +5086,9 @@ void llm_thread_func(omni_context* ctx_omni, common_params* params){
+                 // 单工：assistant_prompt 末尾已带 <|im_start|>user\n，文本本身不需要
+                 //       任何 <|audio_start|>/<|audio_end|> 之类的 modality 包裹。
+                 // 双工：与音频对齐，先 <unit> 再写入文本。
+-                else if (!embeds->user_text.empty()) {
+-                    if (ctx_omni->duplex_mode) {
++                // A turn can contain media AND a textual instruction. Preserve both.
++                if (!embeds->user_text.empty()) {
++                    if (ctx_omni->duplex_mode && embeds->vision_embed.empty() && embeds->audio_embed.empty()) {
+                         eval_string(ctx_omni, params, "<unit>", params->n_batch, &ctx_omni->n_past, false);
+                     }
+                     eval_string(ctx_omni, params, embeds->user_text.c_str(), params->n_batch, &ctx_omni->n_past, false);
+@@ -9894,7 +9895,7 @@ static bool duplex_do_decode(omni_context * ctx_omni, common_params * params,
+     const int llm_n_embd             = llama_n_embd(llama_get_model(ctx_omni->ctx_llama));
+ 
+     std::string response;
+-    for (int il = 0; il < max_tgt_len; ) {
++    for (int il = 0; il < max_tgt_len && ctx_omni->last_completion_tokens < max_tgt_len; ) {
+         if (ctx_omni->break_event.load()) {
+             llm_finish = true;
+             break;
+@@ -10838,7 +10839,8 @@ bool stream_decode(struct omni_context * ctx_omni, std::string debug_dir, int ro
+             }
+             return true;
+         }
+-    } else if (ctx_omni->use_tts) {
++    } else if (ctx_omni->use_tts || ctx_omni->audio_input_template) {
++        // Audio input uses the official TTS text template independently of PCM synthesis.
+         // 🔧 [非双工 TTS 模式] 需要包含 <|tts_bos|>，告诉模型开始生成 TTS 文本
+         // stream_prefill 已添加 <|audio_start|>[audio]<|audio_end|>，这里关闭用户消息并添加 assistant prompt
+         // 格式: <|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<|tts_bos|>
+@@ -10858,6 +10860,9 @@ bool stream_decode(struct omni_context * ctx_omni, std::string debug_dir, int ro
+             eval_string(ctx_omni, ctx_omni->params, prompt.c_str(), ctx_omni->params->n_batch, &ctx_omni->n_past, false);
+         }
+     }
++    ctx_omni->last_prompt_tokens = ctx_omni->n_past;
++    ctx_omni->last_completion_tokens = 0;
++    ctx_omni->last_output_truncated = false;
+     LOG_INF("<user>%s\n", ctx_omni->params->prompt.c_str());
+     LOG_INF("<assistant>");
+     const int max_tgt_len = ctx_omni->params->n_predict < 0 ? ctx_omni->params->n_ctx : ctx_omni->params->n_predict;
+@@ -10923,7 +10928,7 @@ bool stream_decode(struct omni_context * ctx_omni, std::string debug_dir, int ro
+             // 🔧 [重要] 循环直到收集到 step_size 个有效 token，而不是生成 step_size 个 token
+             // 🔧 [P0-打断检测] 检测 break_event，支持双工模式下的打断
+             // 🔧 [P2-chunk限制] 检测 max_new_speak_tokens_per_chunk，便于及时响应打断
+-            while (jl < step_size && !llm_finish && !ctx_omni->break_event.load() && !chunk_limit_reached) {
++            while (jl < step_size && !llm_finish && !ctx_omni->break_event.load() && !chunk_limit_reached && ctx_omni->last_completion_tokens < max_tgt_len) {
+                 // streaming llm
+                 const char * tmp = nullptr;
+                 float * hidden_states = nullptr;
+@@ -10936,6 +10941,7 @@ bool stream_decode(struct omni_context * ctx_omni, std::string debug_dir, int ro
+                 }
+                 
+                 total_tokens_generated++;
++                ctx_omni->last_completion_tokens++;
+                 
+                 // 🔧 [过滤逻辑] 只收集有效的 TTS token
+                 // 特殊 token（如 <think>, </think>, 换行等）不计入 step_size
+@@ -11264,6 +11270,7 @@ bool stream_decode(struct omni_context * ctx_omni, std::string debug_dir, int ro
+     }
+     
+     // ==================== 轮次边界记录与滑窗检查 ====================
++    ctx_omni->last_output_truncated = !llm_finish && ctx_omni->last_completion_tokens >= max_tgt_len;
+     // 🔧 [单工多轮对话] 在 decode 结束时：
+     // 1. 先检查并执行滑窗（基于之前的轮次边界）
+     // 2. 再记录当前轮次的结束边界（作为下一轮的开始位置）
+diff --git a/tools/omni/omni.h b/tools/omni/omni.h
+index 8f15233..2a802fe 100644
+--- a/tools/omni/omni.h
++++ b/tools/omni/omni.h
+@@ -343,6 +343,10 @@ struct omni_context {
+     // 当前是以「语音通话」还是「视频通话」模式进入的，0 = 语音，1 = 视频；
+     int media_type = 0;
+     int use_tts = false;
++    int last_prompt_tokens = 0;
++    int last_completion_tokens = 0;
++    bool last_output_truncated = false;
++    bool audio_input_template = false; // audio input requires tts_bos, even with text-only output
+     std::string tts_bin_dir = "";
+     std::string ref_audio_path = "";  // 参考音频路径（用于音色克隆）
+     
+diff --git a/tools/server/protocol.cpp b/tools/server/protocol.cpp
+index 50c43dd..f3e94d4 100644
+--- a/tools/server/protocol.cpp
++++ b/tools/server/protocol.cpp
+@@ -11,6 +11,9 @@
+ json ProtocolMetrics::to_json() const {
+     json m;
+     m["backend"] = backend;
++    m["prompt_tokens"] = prompt_tokens;
++    m["completion_tokens"] = completion_tokens;
++    m["output_truncated"] = output_truncated;
+     if (kv_cache_length > 0) {
+         m["kv_cache_length"] = kv_cache_length;
+     }
+diff --git a/tools/server/protocol.h b/tools/server/protocol.h
+index 1721777..d438381 100644
+--- a/tools/server/protocol.h
++++ b/tools/server/protocol.h
+@@ -25,6 +25,9 @@ struct ProtocolMetrics {
+     double cost_tts_ms = 0.0;
+     double cost_token2wav_ms = 0.0;
+     int n_tokens = 0;
++    int prompt_tokens = 0;
++    int completion_tokens = 0;
++    bool output_truncated = false;
+     int n_tts_tokens = 0;
+     int vision_slices = 0;
+     int vision_tokens = 0;
+diff --git a/tools/server/server-omni.cpp b/tools/server/server-omni.cpp
+index 851038a..afbe650 100644
+--- a/tools/server/server-omni.cpp
++++ b/tools/server/server-omni.cpp
+@@ -371,6 +371,19 @@ int main(int argc, char ** argv) {
+                           state.octx, state.octx_mutex);
+     });
+ 
++    // Narrow interrupt: set the native atomic break flag without closing the
++    // duplex conversation or deleting its KV cache. The browser stops playback
++    // immediately; subsequent input remains in this same native session.
++    svr.Post("/sessions/:session_id/interrupt", [&](const httplib::Request & req, httplib::Response & res) {
++        std::lock_guard<std::mutex> lock(state.octx_mutex);
++        auto * session = state.session_mgr.get(req.path_params.at("session_id"));
++        if (!session || session->state != SessionState::ACTIVE || !session->octx || !session->octx->duplex_mode) {
++            res.status = 404; res_ok(res, {{"interrupted", false}}); return;
++        }
++        session->octx->break_event.store(true);
++        res_ok(res, {{"interrupted", true}});
++    });
++
+     svr.Post("/sessions/:session_id/close", [&](const httplib::Request & req, httplib::Response & res) {
+         std::string session_id = req.path_params.at("session_id");
+         LOG_INF("Close session requested: %s\n", session_id.c_str());
+@@ -411,7 +424,7 @@ int main(int argc, char ** argv) {
+     });
+ 
+     // start server
+-    svr.listen("0.0.0.0", params.port);
++    svr.listen(params.hostname, params.port);
+ 
+     // cleanup
+     {
+diff --git a/tools/server/ws_handler.cpp b/tools/server/ws_handler.cpp
+index 5cf6427..d79f06b 100644
+--- a/tools/server/ws_handler.cpp
++++ b/tools/server/ws_handler.cpp
+@@ -1,6 +1,7 @@
+ #include <algorithm>
+ #include <chrono>
+ #include <cstdio>
++#include <cmath>
+ #include <cstdlib>
+ #include <deque>
+ #include <filesystem>
+@@ -189,6 +190,7 @@ static void reset_octx_for_session(omni_context * octx, const ParsedSessionInit
+     octx->n_past = 0;
+     octx->n_keep = 0;
+     octx->system_prompt_initialized = false;
++    octx->audio_input_template = false;
+     octx->simplex_round_idx = 0;
+     octx->wav_turn_base = 0;
+     octx->round_start_positions.clear();
+@@ -386,10 +388,26 @@ static ExtractedVideoMedia extract_video_mp4_media(const std::string & video_b64
+         out.audio_path = audio_path;
+     }
+ 
++    // Sample the full clip, rather than silently taking only its first N frames.
++    const std::string duration_cmd = "ffprobe -v error -show_entries format=duration "
++        "-of default=noprint_wrappers=1:nokey=1 " + shell_quote(out.video_path);
++    std::string duration_text;
++    if (FILE * probe = popen(duration_cmd.c_str(), "r")) {
++        char buf[128];
++        while (fgets(buf, sizeof(buf), probe)) duration_text += buf;
++        pclose(probe);
++    }
++    double duration = 0.0;
++    try { duration = std::stod(duration_text); } catch (...) {}
++    if (!std::isfinite(duration) || duration <= 0.0) {
++        LOG_ERR("video duration probe failed; refusing first-frames-only fallback\n");
++        return out;
++    }
+     std::string frame_pattern = (dir / "frame_%03d.jpg").string();
+     std::string frame_cmd =
+         "ffmpeg -y -hide_banner -loglevel error -i " + shell_quote(out.video_path) +
+-        " -an -frames:v " + std::to_string(n_frames) +
++        " -an -vf " + shell_quote("fps=" + std::to_string(n_frames / duration)) +
++        " -frames:v " + std::to_string(n_frames) +
+         " -q:v 2 " + shell_quote(frame_pattern);
+     if (std::system(frame_cmd.c_str()) == 0) {
+         for (int i = 1; i <= n_frames; ++i) {
+@@ -405,13 +423,6 @@ static ExtractedVideoMedia extract_video_mp4_media(const std::string & video_b64
+     return out;
+ }
+ 
+-static std::string truncate_for_prompt(const std::string & text, size_t max_chars) {
+-    if (text.size() <= max_chars) {
+-        return text;
+-    }
+-    return text.substr(0, max_chars) + "...";
+-}
+-
+ static std::string first_system_text(const std::vector<ParsedMessage> & messages) {
+     std::string text;
+     for (const auto & msg : messages) {
+@@ -426,63 +437,6 @@ static std::string first_system_text(const std::vector<ParsedMessage> & messages
+     return text;
+ }
+ 
+-// Build the ChatML body for a turn: single-turn → just the last user text;
+-// multi-turn → the last up-to-8 non-system messages with role tags preserved
+-// (matching the Python backend instead of flattening history into one prompt).
+-static std::string build_turn_based_chatml_body(const std::vector<ParsedMessage> & messages,
+-                                                const ParsedMessage * last_user_msg) {
+-    if (!last_user_msg) {
+-        return "";
+-    }
+-    const std::string last_text = last_user_msg->text;
+-    if (last_text.empty()) {
+-        return "";
+-    }
+-
+-    int non_system_count = 0;
+-    for (const auto & msg : messages) {
+-        if (msg.role != "system" && !msg.text.empty()) {
+-            non_system_count++;
+-        }
+-    }
+-    if (non_system_count <= 1) {
+-        return last_text;
+-    }
+-
+-    std::vector<const ParsedMessage *> tail;
+-    tail.reserve(8);
+-    for (auto it = messages.rbegin(); it != messages.rend() && (int)tail.size() < 8; ++it) {
+-        if (it->role == "system" || it->text.empty()) {
+-            continue;
+-        }
+-        tail.push_back(&(*it));
+-    }
+-    std::reverse(tail.begin(), tail.end());
+-
+-    std::string prompt;
+-    bool first_content = true;
+-    for (const ParsedMessage * msg : tail) {
+-        const bool is_last = (msg == last_user_msg);
+-        const std::string text = truncate_for_prompt(msg->text, 1200);
+-
+-        if (first_content) {
+-            // stream_prefill(index=0) leaves KV at "<|im_start|>user\n".
+-            if (msg->role != "user") {
+-                prompt += "<|im_end|>\n<|im_start|>" + msg->role + "\n";
+-            }
+-            first_content = false;
+-        } else {
+-            prompt += "<|im_start|>" + msg->role + "\n";
+-        }
+-
+-        prompt += text;
+-        if (!is_last) {
+-            prompt += "<|im_end|>\n";
+-        }
+-    }
+-    return prompt;
+-}
+-
+ // Pick the system/assistant prompt templates for a turn: TTS path uses the
+ // voice-clone (ref-audio) system prompt; text-only path uses a plain system
+ // message. Mirrors the Python backend's TTS vs no-TTS chat templates.
+@@ -498,6 +452,15 @@ static void configure_turn_based_prompt(omni_context * octx,
+         octx->audio_assistant_prompt = "<|audio_end|>你的任务是用这种声音模式来当一个助手。请认真、高质量地回复用户的问题。请用高自然度的方式和用户聊天。你是由面壁智能开发的人工智能助手：面壁小钢炮。<|im_end|>\n<|im_start|>user\n";
+         octx->omni_voice_clone_prompt = "<|im_start|>system\n模仿音频样本的音色并生成新的内容。\n<|audio_start|>";
+         octx->omni_assistant_prompt = "<|audio_end|>你的任务是用这种声音模式来当一个助手。请认真、高质量地回复用户的问题。请用高自然度的方式和用户聊天。<|im_end|>\n<|im_start|>user\n";
++        // Keep the caller's system/tool/memory instructions in speech mode.
++        // The voice-style prefix supplements them; it must never replace them.
++        if (!system_text.empty()) {
++            const auto marker = std::string("<|im_end|>");
++            for (auto * prompt : {&octx->audio_assistant_prompt, &octx->omni_assistant_prompt}) {
++                const auto end = prompt->find(marker);
++                if (end != std::string::npos) prompt->insert(end, "\n\n" + system_text);
++            }
++        }
+         return;
+     }
+ 
+@@ -822,65 +785,56 @@ void handle_ws_backend(httplib::ws::WebSocket & ws,
+             std::vector<std::string> turn_temp_paths;
+             int turn_vision_slices = 0;
+ 
+-            // Images: take all images from the last user message
+-            const ParsedMessage * last_user_msg = nullptr;
+-            for (auto it = parsed_msgs.rbegin(); it != parsed_msgs.rend(); ++it) {
+-                if (it->role == "user") {
+-                    last_user_msg = &(*it);
+-                    break;
+-                }
+-            }
+-
+-            if (last_user_msg) {
+-                int input_index = ++msg_counter;
+-                for (const auto & img_b64 : last_user_msg->image_b64s) {
+-                    std::string ipath = TempMediaFiles::write_image_jpeg(img_b64, temp_dir, input_index);
+-                    if (!ipath.empty()) {
+-                        tmp_files.image_path = ipath; // last image wins
+-                    }
+-                }
+-                // Audio: use the first audio from the last user message
+-                if (!last_user_msg->audio_b64s.empty()) {
+-                    tmp_files.audio_path = TempMediaFiles::write_audio_wav(
+-                        last_user_msg->audio_b64s[0], temp_dir, input_index);
++            // Pi exact-content adapter: preserve EVERY message and media block in
++            // original order. Never flatten media ahead of a transcription task,
++            // discard historical attachments, or truncate the last eight messages.
++            struct PrefillPart { std::string audio, image, text; };
++            std::vector<PrefillPart> parts;
++            bool first_message = true;
++            for (const auto & raw_message : parsed_input.messages) {
++                const std::string role = raw_message.value("role", std::string("user"));
++                if (role == "system") continue;
++                if (role != "user" && role != "assistant") {
++                    fail_fast(session_id, "unsupported_message_role"); return;
+                 }
+-                for (size_t i = 0; i < last_user_msg->video_b64s.size(); ++i) {
+-                    const int stack_frames = i < last_user_msg->video_stack_frames.size()
+-                                           ? last_user_msg->video_stack_frames[i]
+-                                           : 1;
+-                    ExtractedVideoMedia video = extract_video_mp4_media(
+-                        last_user_msg->video_b64s[i], temp_dir, ++msg_counter, stack_frames);
+-                    if (!video.video_path.empty()) {
+-                        turn_temp_paths.push_back(video.video_path);
++                if (first_message) {
++                    if (role != "user") parts.push_back({"", "", "<|im_end|>\n<|im_start|>" + role + "\n"});
++                    first_message = false;
++                } else parts.push_back({"", "", "<|im_end|>\n<|im_start|>" + role + "\n"});
++                json blocks = raw_message.at("content");
++                if (blocks.is_string()) blocks = json::array({json{{"type", "text"}, {"text", blocks}}});
++                for (const auto & block : blocks) {
++                    auto m = parse_one_message(json{{"role", role}, {"content", json::array({block})}});
++                    if (!m.text.empty()) parts.push_back({"", "", m.text});
++                    for (const auto & data : m.image_b64s) {
++                        auto path = TempMediaFiles::write_image_jpeg(data, temp_dir, ++msg_counter);
++                        if (path.empty()) { fail_fast(session_id, "image_decode_failed"); return; }
++                        parts.push_back({"", path, ""}); turn_temp_paths.push_back(path); ++turn_vision_slices;
+                     }
+-                    if (!video.audio_path.empty() && tmp_files.audio_path.empty()) {
+-                        tmp_files.audio_path = video.audio_path;
+-                    } else if (!video.audio_path.empty()) {
+-                        turn_temp_paths.push_back(video.audio_path);
++                    for (const auto & data : m.audio_b64s) {
++                        auto path = TempMediaFiles::write_audio_wav(data, temp_dir, ++msg_counter);
++                        if (path.empty()) { fail_fast(session_id, "audio_decode_failed"); return; }
++                        parts.push_back({path, "", ""}); turn_temp_paths.push_back(path);
+                     }
+-                    for (const auto & frame_path : video.frame_paths) {
+-                        if (tmp_files.image_path.empty()) {
+-                            tmp_files.image_path = frame_path;
+-                        } else {
+-                            extra_image_paths.push_back(frame_path);
++                    for (size_t i = 0; i < m.video_b64s.size(); ++i) {
++                        auto video = extract_video_mp4_media(m.video_b64s[i], temp_dir, ++msg_counter, m.video_stack_frames[i]);
++                        if (!video.video_path.empty()) turn_temp_paths.push_back(video.video_path);
++                        if (!video.audio_path.empty()) turn_temp_paths.push_back(video.audio_path);
++                        if (video.frame_paths.empty()) { fail_fast(session_id, "video_decode_failed"); return; }
++                        for (size_t j = 0; j < video.frame_paths.size(); ++j) {
++                            const auto & path = video.frame_paths[j]; turn_temp_paths.push_back(path);
++                            parts.push_back({j == 0 ? video.audio_path : "", path, ""}); ++turn_vision_slices;
+                         }
+                     }
+-                    if (video.frame_paths.empty()) {
+-                        tmp_files.cleanup();
+-                        for (const auto & path : turn_temp_paths) fs::remove(path);
+-                        fail_fast(session_id, "video_decode_failed");
+-                        return;
+-                    }
+                 }
+             }
+-
+-            // The page opens a fresh backend session for every turn. Match the
+-            // Python backend by preserving message roles in ChatML instead of
+-            // summarizing history into a single natural-language prompt.
++            // Official MiniCPM chat forces use_tts_template whenever audio
++            // occurs anywhere in history. This does NOT imply generate_audio.
++            for (const auto & message : parsed_msgs) {
++                if (!message.audio_b64s.empty() || !message.video_b64s.empty())
++                    octx->audio_input_template = true;
++            }
+             const std::string system_text = first_system_text(parsed_msgs);
+-            std::string prompt = build_turn_based_chatml_body(parsed_msgs, last_user_msg);
+-
+-            turn_vision_slices = (tmp_files.image_path.empty() ? 0 : 1) + (int)extra_image_paths.size();
+             double prefill_ms = 0.0;
+             double generate_ms = 0.0;
+             int n_past_before_decode = 0;
+@@ -906,25 +860,12 @@ void handle_ws_backend(httplib::ws::WebSocket & ws,
+                         return;
+                     }
+                 }
+-                int input_index = msg_counter > 0 ? msg_counter : ++msg_counter;
+-                if (!stream_prefill(octx, tmp_files.audio_path, tmp_files.image_path,
+-                                    input_index, parsed_input.max_slice_nums, prompt)) {
+-                    octx->use_tts = prev_use_tts;
+-                    tmp_files.cleanup();
+-                    for (const auto & path : extra_image_paths) fs::remove(path);
+-                    for (const auto & path : turn_temp_paths) fs::remove(path);
+-                    fail_fast(session_id, "prefill_failed");
+-                    return;
+-                }
+-                for (const auto & image_path : extra_image_paths) {
+-                    if (!stream_prefill(octx, /*aud*/"", image_path,
+-                                        ++msg_counter, parsed_input.max_slice_nums, /*text*/"")) {
++                for (const auto & part : parts) {
++                    if (!stream_prefill(octx, part.audio, part.image, ++msg_counter,
++                                        parsed_input.max_slice_nums, part.text)) {
+                         octx->use_tts = prev_use_tts;
+-                        tmp_files.cleanup();
+-                        for (const auto & path : extra_image_paths) fs::remove(path);
+                         for (const auto & path : turn_temp_paths) fs::remove(path);
+-                        fail_fast(session_id, "video_frame_prefill_failed");
+-                        return;
++                        fail_fast(session_id, "ordered_prefill_failed"); return;
+                     }
+                 }
+                 octx->use_tts = prev_use_tts;
+@@ -981,7 +922,7 @@ void handle_ws_backend(httplib::ws::WebSocket & ws,
+                         octx->text_queue.pop_front();
+                     }
+ 
+-                    if (octx->text_done_flag && octx->text_queue.empty()) {
++                    if (octx->text_done_flag && octx->text_queue.empty() && frag.empty()) {
+                         break;
+                     }
+                 }
+@@ -1058,6 +999,9 @@ void handle_ws_backend(httplib::ws::WebSocket & ws,
+             ProtocolMetrics done_metrics = make_runtime_metrics(
+                 octx, prefill_ms, generate_ms, elapsed_ms(t_request_start),
+                 std::max(0, octx->n_past - n_past_before_decode), turn_vision_slices);
++            done_metrics.prompt_tokens = octx->last_prompt_tokens;
++            done_metrics.completion_tokens = octx->last_completion_tokens;
++            done_metrics.output_truncated = octx->last_output_truncated;
+             if (parsed_input.use_tts_template) {
+                 done_metrics.cost_tts_ms = std::max(
+                     0.0, done_metrics.wall_clock_ms - prefill_ms - generate_ms);
+@@ -1146,6 +1090,7 @@ void handle_ws_backend(httplib::ws::WebSocket & ws,
+ 
+             // Collect full text for response.done
+             std::string full_text;
++            bool reported_listen = false;
+             std::string utf8_pending;
+ 
+             // Poll text_queue
+@@ -1162,13 +1107,14 @@ void handle_ws_backend(httplib::ws::WebSocket & ws,
+                         octx->text_queue.pop_front();
+                     }
+ 
+-                    if (octx->text_done_flag && octx->text_queue.empty()) {
++                    if (octx->text_done_flag && octx->text_queue.empty() && frag.empty()) {
+                         break;
+                     }
+                 }
+ 
+                 if (!frag.empty()) {
+                     if (frag == "__IS_LISTEN__") {
++                        reported_listen = true;
+                         // Model switched to listen
+                         send_event(make_listen_delta(
+                             session_id, response_id,
+@@ -1226,7 +1172,7 @@ void handle_ws_backend(httplib::ws::WebSocket & ws,
+                 std::lock_guard<std::mutex> lk(audio_state->mtx);
+                 emitted_audio = audio_state->emitted_audio;
+             }
+-            if (!full_text.empty() || emitted_audio) {
++            if (!reported_listen) {
+                 // Full-duplex speak responses also need an explicit completion
+                 // boundary; pure listen steps are represented by listen delta only.
+                 send_event(make_response_done(
