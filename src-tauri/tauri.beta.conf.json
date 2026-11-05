@@ -1,0 +1,18 @@
+{
+  "productName": "Pi Agent Access 测试版",
+  "identifier": "com.zhangzheyuan.pi-agent.access.beta",
+  "version": "1.2.0-beta.1",
+  "plugins": {
+    "updater": {
+      "endpoints": [],
+      "pubkey": ""
+    }
+  },
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-",
+      "infoPlist": "Info.beta.plist",
+      "entitlements": "Entitlements.beta.plist"
+    }
+  }
+}

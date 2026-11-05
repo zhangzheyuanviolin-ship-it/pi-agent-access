@@ -1,0 +1,79 @@
+"""Beta-only local router. All mutable state and owned ports are separate from stable."""
+from pathlib import Path
+import os,json,sys,urllib.request,http.cookiejar,time,signal,subprocess,re,ctypes
+import model_gateway as core
+ROOT=Path.home()/'Library/Application Support/Pi Agent Access Beta'
+
+def validate_catalog(catalog):
+ ports=[m['port']for m in catalog]
+ if len({m['id']for m in catalog})!=len(catalog):raise RuntimeError('Duplicate beta model ID')
+ if len(set(ports))!=len(ports)or any(type(p)is not int or not 12400<=p<12500 or p==12449 for p in ports):raise RuntimeError('Beta catalog ports are not isolated')
+ for m in catalog:
+  for key in ['SUSHI_PREFIX_CACHE_DIR','MLTF_DATA_ROOT']:
+   value=m.get('environment',{}).get(key)
+   if value and not Path(value).resolve().is_relative_to(ROOT.resolve()):raise RuntimeError('Beta cache points outside beta data')
+  args=m.get('args',[])
+  if '--port' not in args or args[args.index('--port')+1]!=str(m['port']):raise RuntimeError('Beta native port does not match recipe')
+  if '--host' not in args or args[args.index('--host')+1]!='127.0.0.1':raise RuntimeError('Beta native host must be loopback')
+  for flag in ['--kv-disk-dir','--ssd-root','--paged-ssd-cache-dir','--base-path','--log-file']:
+   if flag in args and not Path(args[args.index(flag)+1]).resolve().is_relative_to(ROOT.resolve()):raise RuntimeError('Beta storage points outside beta data')
+
+def stable_idle():
+ private=json.loads((ROOT/'private/priority.json').read_text());password=Path(private['passwordFile']).read_text().strip()
+ opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+ req=urllib.request.Request('http://127.0.0.1:30143/api/web-auth',json.dumps({'password':password}).encode(),{'Content-Type':'application/json','Origin':'http://127.0.0.1:30143'})
+ try:
+  with opener.open(req,timeout=3)as r:r.read()
+  with opener.open('http://127.0.0.1:30143/api/agent/running',timeout=3)as r:running=json.load(r)['runningSessionIds']
+ except Exception:raise RuntimeError('无法核实稳定版状态，未启动测试推理')from None
+ if not isinstance(running,list):raise RuntimeError('稳定版状态格式无效，未启动测试推理')
+ if running:raise RuntimeError('稳定版正在执行任务，测试推理已让出资源；没有取消稳定任务')
+
+def admission(target):
+ stable_idle()
+ from resource_admission import check_resources
+ return check_resources(target.get('beta_minimum_available_bytes',48*1024**3),target.get('maximum_existing_swap_bytes',0))
+
+class BetaManager(core.Manager):
+ def ensure(self,target):
+  stable_idle()
+  # A matching model ID on an occupied port does not prove ownership. Check
+  # every port before the core manager can load, forward or unload anything.
+  for entry in self.catalog:
+   pid=core.owner_pid(entry['port'])
+   if pid is None:continue
+   child=self.children.get(entry['id'])
+   if child is None or child.poll()is not None:
+    raise RuntimeError('测试端口被非本轮启动的服务占用，未接管或卸载任何服务')
+   try:owned=os.getpgid(pid)==os.getpgid(child.pid)==child.pid
+   except ProcessLookupError:owned=False
+   if not owned:raise RuntimeError('测试服务进程归属不符，未转发或卸载模型')
+  return super().ensure(target)
+ def _before_load(self,target):admission(target)
+
+class BetaHandler(core.Handler):
+ def do_GET(self):
+  if self.path=='/beta/identity':return self.reply(200,{'profile':'beta','pid':os.getpid(),'code':str(Path(__file__).resolve())})
+  return super().do_GET()
+
+if __name__=='__main__':
+ if os.environ.get('PI_ACCESS_PROFILE')!='beta':raise SystemExit('Explicit beta profile required')
+ os.umask(0o077);core.BASE=ROOT;catalog=json.loads((ROOT/'private/model-catalog.json').read_text());validate_catalog(catalog)
+ run=ROOT/'private/model-gateway';run.mkdir(parents=True,exist_ok=True);server=core.ThreadingHTTPServer(('127.0.0.1',12449),BetaHandler);server.daemon_threads=True;server.manager=BetaManager(catalog,run)
+ (ROOT/'private/gateway-owner.json').write_text(json.dumps({'pid':os.getpid(),'port':12449,'code':str(Path(__file__).resolve())}))
+ def stop(*_):
+  for model in catalog:
+   child=server.manager.children.get(model['id'])
+   if child is not None and child.poll()is None:
+    try:os.killpg(child.pid,signal.SIGTERM)
+    except ProcessLookupError:pass
+  server.server_close();raise SystemExit(0)
+ signal.signal(signal.SIGTERM,stop);signal.signal(signal.SIGINT,stop)
+ def watch_parent():
+  while True:
+   time.sleep(1)
+   if os.getppid()!=parent_pid:os.kill(os.getpid(),signal.SIGTERM);return
+ parent_pid=os.getppid()
+ if parent_pid==1:raise SystemExit('Beta launcher is required')
+ core.threading.Thread(target=watch_parent,daemon=True).start()
+ server.serve_forever()

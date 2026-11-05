@@ -72,3 +72,7 @@ e2e_*.mjs
 
 # Isolated local production and acceptance builds
 /.next-*/
+
+# Python runtime bytecode is never release input
+__pycache__/
+*.py[cod]

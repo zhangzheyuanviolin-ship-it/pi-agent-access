@@ -25,6 +25,7 @@ export function isTauriDesktop(): boolean {
 export async function installLatestDesktopRelease(
   onProgress: (progress: DesktopUpgradeProgress) => void,
 ): Promise<DesktopUpgradeResult> {
+  if (process.env.NEXT_PUBLIC_PI_ACCESS_PROFILE === "beta") throw new Error("测试版不能安装或覆盖稳定版；请使用独立测试通道。");
   if (!isTauriDesktop()) {
     throw new Error("Automatic installation is only available in the packaged desktop app.");
   }

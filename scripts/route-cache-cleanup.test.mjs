@@ -15,6 +15,7 @@ async function stageServer(t, { buildId, marker, cached }) {
   const dir = await mkdtemp(join(os.tmpdir(), "pi-route-cache-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await copyFile(join(rootDir, "desktop", "server-launcher.cjs"), join(dir, "desktop-server.cjs"));
+  await copyFile(join(rootDir, "desktop", "distribution-profile.cjs"), join(dir, "distribution-profile.cjs"));
   // Stand-in for the standalone entrypoint: leave straight away.
   await writeFile(join(dir, "server.js"), "process.exit(0);\n");
   const next = join(dir, ".next-desktop");

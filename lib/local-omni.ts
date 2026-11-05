@@ -16,8 +16,9 @@ export function omniSettings():OmniSettings|undefined {
  return value;
 }
 export function omniGateway(settings:OmniSettings):string {
- const u=new URL(settings.gatewayUrl??'http://127.0.0.1:12349');
+ const u=new URL(settings.gatewayUrl??(process.env.PI_ACCESS_PROFILE==='beta'?'http://127.0.0.1:12449':'http://127.0.0.1:12349'));
  if(u.protocol!=='http:'||u.hostname!=='127.0.0.1'||!/^\d+$/.test(u.port)||Number(u.port)<1024||Number(u.port)>65535||u.pathname!=='/'||u.search||u.hash||u.username||u.password)throw Error('本地全模态网关配置无效');
+ if(process.env.PI_ACCESS_PROFILE==='beta'&&u.port!=='12449')throw Error('测试版只允许使用独立全模态网关');
  return u.origin;
 }
 export function omniSpeechPreference(entries:readonly unknown[]):boolean {

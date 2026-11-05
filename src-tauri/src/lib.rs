@@ -399,13 +399,21 @@ fn server_process_path(node_path: &Path) -> Option<std::ffi::OsString> {
 
 #[cfg(feature = "custom-protocol")]
 fn choose_port(app: &AppHandle) -> io::Result<u16> {
+    // A separate fixed origin keeps beta storage and its file helper isolated.
+    if app.config().identifier.ends_with(".beta") {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 38472))?;
+        drop(listener);
+        write_last_server_port(app, 38472);
+        return Ok(38472);
+    }
     let mut candidates = Vec::with_capacity(36);
     if let Some(last) = read_last_server_port(app) {
         candidates.push(last);
     }
-    candidates.push(DESKTOP_SERVER_PORT);
+    let preferred = if app.config().identifier.ends_with(".beta") { 38472 } else { DESKTOP_SERVER_PORT };
+    candidates.push(preferred);
     for offset in 1u16..=32 {
-        candidates.push(DESKTOP_SERVER_PORT.saturating_add(offset));
+        candidates.push(preferred.saturating_add(offset));
     }
 
     for port in candidates {
@@ -650,6 +658,10 @@ fn start_packaged_server(
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr));
+
+    if app.config().identifier.ends_with(".beta") {
+        command.env("PI_ACCESS_PROFILE", "beta");
+    }
 
     if let Some(path) = server_process_path(&node_path) {
         command.env("PATH", path);

@@ -34,6 +34,7 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_PI_ACCESS_PROFILE === "beta") { setLoading(false); return; }
     const controller = new AbortController();
     fetch("/api/updates?refresh=1", { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -123,6 +124,8 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
       setUpgradeError(error instanceof Error ? error.message : String(error));
     }
   };
+
+  if (process.env.NEXT_PUBLIC_PI_ACCESS_PROFILE === "beta") return <section aria-label="测试版更新"><p>Pi Agent Access 测试版</p><p>测试版独立更新，不会覆盖稳定版。</p></section>;
 
   return (
     <section className="settings-general-section settings-updates">

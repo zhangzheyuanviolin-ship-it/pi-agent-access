@@ -5,7 +5,7 @@ const path = require('node:path');
 const os = require('node:os');
 const {spawnSync} = require('node:child_process');
 const VERSION = '1.0.0-lcu-v14';
-function root() { return path.join(os.homedir(), 'Library/Application Support/Pi Agent Access'); }
+function root() { return path.join(os.homedir(), process.env.PI_ACCESS_PROFILE==='beta'?'Library/Application Support/Pi Agent Access Beta':'Library/Application Support/Pi Agent Access'); }
 function write(file, value) {
   fs.mkdirSync(path.dirname(file), {recursive:true,mode:0o700});
   const tmp=file+'.tmp'; fs.writeFileSync(tmp, JSON.stringify(value,null,2),{mode:0o600});fs.renameSync(tmp,file);
@@ -31,6 +31,12 @@ function prepare({enable=false, dataRoot=root(), distribution=__dirname, applica
     const expectedRoot=path.resolve(dataRoot,'computer-use-runtime')+path.sep;
     if(pin.format===1&&typeof pin.lcu==='string'&&path.resolve(pin.lcu).startsWith(expectedRoot)&&fs.existsSync(path.join(pin.lcu,'installation.json'))&&fs.existsSync(pin.node))current=pin.lcu;
   }catch{}
+  if(process.env.PI_ACCESS_PROFILE==='beta'){
+    const stableBase=path.join(os.homedir(),'Library/Application Support/Pi Agent Access/computer-use-runtime');
+    const pin=JSON.parse(fs.readFileSync(path.join(stableBase,'runtime-pin.json'),'utf8'));
+    if(pin.format!==1||!path.resolve(pin.lcu).startsWith(path.resolve(stableBase)+path.sep)||!fs.existsSync(path.join(pin.lcu,'installation.json')))throw Error('Beta requires the verified read-only computer runtime');
+    current=pin.lcu;
+  }
   const extensionDir=path.join(agentDir,'maintained-extensions/lcu');
   let status={version:VERSION,available:false,automaticAccess:false,message:'请先安装官方 ChatGPT，再点击启用电脑操作。'};
   try {
@@ -58,7 +64,7 @@ function prepare({enable=false, dataRoot=root(), distribution=__dirname, applica
     if(!fs.existsSync(policyFile))write(policyFile,{version:1,normalComputerAccess:'ask'});
     if(enable){
       write(policyFile,{version:1,normalComputerAccess:'allow',authorization:'User enabled ordinary Computer Use access in Pi Agent Access setup.',honorPiPermissionMode:true});
-      const browser=spawnSync(path.join(current,'bin/lcu'),['browser','install'],{encoding:'utf8',timeout:30000,env:process.env});
+      const browser=process.env.PI_ACCESS_PROFILE==='beta'?{status:0}:spawnSync(path.join(current,'bin/lcu'),['browser','install'],{encoding:'utf8',timeout:30000,env:process.env});
       if(browser.status!==0)throw Error('桌面操作已准备，浏览器连接安装未完成，可再次点击启用重试。');
     }
     initializeProfile(agentDir,path.join(extensionDir,'index.mjs'));

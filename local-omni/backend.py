@@ -13,6 +13,11 @@ from media_probe import media_kind,media_streams
 def preflight(config):
     if subprocess.run(['pgrep', '-x', 'VoiceOver'], capture_output=True).returncode:
         raise RuntimeError('VoiceOver is not running; no model load')
+    if os.environ.get('PI_ACCESS_PROFILE')=='beta':
+        import sys
+        sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'beta-runtime'))
+        from resource_admission import check_resources
+        return check_resources(config['minimum_available_bytes'],config.get('maximum_existing_swap_bytes',0))
     swap = subprocess.check_output(['sysctl', 'vm.swapusage'], text=True)
     if 'used = 0.00M' not in swap:
         raise RuntimeError('Swap is already in use; refusing new omni load')

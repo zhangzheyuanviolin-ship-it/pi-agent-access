@@ -8,8 +8,10 @@ const path = require("node:path");
 // Desktop API requests share the existing user-session service. This only reads
 // a private local configuration; it neither starts nor stops any service.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const sharedConfigPath = path.join(require("node:os").homedir(), ".pi", "agent", "shared-backend.json");
-if (fs.existsSync(sharedConfigPath)) {
+const {applyDistributionProfile} = require("./distribution-profile.cjs");
+const profile = applyDistributionProfile();
+const sharedConfigPath = profile.sharedConfigPath;
+if (sharedConfigPath && fs.existsSync(sharedConfigPath)) {
   const config = JSON.parse(fs.readFileSync(sharedConfigPath, "utf8"));
   if (config.url !== "http://127.0.0.1:30143") throw new Error("Invalid shared backend address");
   const password = fs.readFileSync(config.passwordFile, "utf8").trim();
@@ -197,6 +199,9 @@ try {
   // Cleanup must never keep the server from starting.
   console.error("[Pi Agent] route-cache cleanup failed:", cacheError);
 }
+
+// Only the beta sidecar owns this independent inference router.
+if(profile.beta) require('./beta-gateway.cjs').startBetaGateway(profile);
 
 // The standalone Next.js entrypoint is CommonJS.
 // eslint-disable-next-line @typescript-eslint/no-require-imports

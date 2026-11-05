@@ -90,6 +90,8 @@ test("no test file is left out of npm test", async () => {
     for(const entry of await readdir(dir,{withFileTypes:true})){
       if(entry.name==='node_modules'||entry.name==='.git'||entry.name.startsWith('.next'))continue;
       const name=prefix+entry.name;
+      // Generated package copies are not source tests; the originals remain covered.
+      if(name==='src-tauri/resources'||name==='src-tauri/target')continue;
       if(entry.isDirectory())out.push(...await testsIn(join(dir,entry.name),name+'/'));
       else if(entry.isFile()&&name.endsWith('.test.mjs'))out.push(name);
     }return out;

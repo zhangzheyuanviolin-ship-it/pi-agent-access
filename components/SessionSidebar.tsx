@@ -573,6 +573,21 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     };
   }, [loadSessions]);
 
+  useEffect(() => {
+    if (!error) return;
+    let stopped = false;
+    let pending = false;
+    // Loopback desktop uses SSE: after its initial snapshot there may be no
+    // further events to wake a list whose bounded HTTP retries all failed.
+    // Retry only failed list reads; never resend chat, tools or model requests.
+    const timer = setInterval(() => {
+      if (stopped || pending || document.visibilityState !== "visible") return;
+      pending = true;
+      void loadSessions(false, false, true).finally(() => { pending = false; });
+    }, 4000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [error, loadSessions]);
+
   // Persist unread markers so they survive a browser refresh before the user
   // has actually opened the completed session.
   useEffect(() => {

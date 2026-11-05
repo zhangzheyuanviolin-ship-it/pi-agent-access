@@ -7,7 +7,7 @@ export function compactNumericKeyEnumeration(text){
  });return changed?JSON.stringify(value):undefined;}catch{return undefined;}
 }
 /** Bound automatic textual observation, never image bytes, tool status or past messages. */
-export function withPagedText(result,{directory=join(homedir(),'.pi/agent/observations/lcu-text')}={}){
+export function withPagedText(result,{directory=join(process.env.PI_CODING_AGENT_DIR||join(homedir(),'.pi/agent'),'observations/lcu-text')}={}){
  const content=result.content??[],texts=content.filter(b=>b.type==='text'&&typeof b.text==='string');
  if(texts.reduce((n,b)=>n+b.text.length,0)<=64000)return result;
  const full=texts.map((b,i)=>`=== text block ${i} ===\n${b.text}`).join('\n');let file,failed=false;

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>只有您主动开启实时通话后，测试版才会请求摄像头画面，交给本机模型分析。</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>只有您主动开启语音或实时通话后，测试版才会请求麦克风，用于本机对话与语音打断。</string>
+</dict>
+</plist>

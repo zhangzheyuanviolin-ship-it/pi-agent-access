@@ -42,7 +42,9 @@
     ".next-omni-integration/types/**/*.ts",
     ".next-omni-integration/dev/types/**/*.ts",
     ".next-omni-qwen/types/**/*.ts",
-    ".next-omni-qwen/dev/types/**/*.ts"
+    ".next-omni-qwen/dev/types/**/*.ts",
+    ".next-beta/types/**/*.ts",
+    ".next-beta/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

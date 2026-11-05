@@ -389,6 +389,30 @@
       "group": "computer",
       "historicalEvidence": "browser-first-observation-20261105/original-call-analysis.private.json",
       "requiresLiveEvidence": true
+    },
+    {
+      "id": "R08-BETA-ISOLATION",
+      "requirement": "测试版独立签名标识、固定网页端口、agent数据、推理端口、缓存与归属进程；拒绝稳定版地址和目录，禁止自动修改全局浏览器注册或卸载稳定模型。构建依赖必须属于候选工作树，不得通过符号链接写入稳定源码。",
+      "test": "scripts/distribution-isolation.test.mjs + beta-runtime/test_beta_gateway.py",
+      "group": "release",
+      "historicalEvidence": "golden-and-omni-beta-20261105/beta-prepare-1.log",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "M08-LOOPBACK-COLD-RECOVERY",
+      "requirement": "本地桌面SSE首次快照后，列表请求连续失败超过内置HTTP重试窗口仍须在服务恢复后自动重读列表；仅重试只读列表，不重发聊天或工具，隐藏时暂停且防重入。稳定版不热更新，测试版验证后才考虑提升。已选择会话的历史GET失败也必须自动恢复，保留同会话single-flight及会话世代检查，不重试404/用户消息。",
+      "test": "components/SessionSidebar.test.mjs + actual package UI outage scenario",
+      "group": "mobile",
+      "historicalEvidence": "golden-and-omni-beta-20261105/beta-app-ui-results.json.attempt3",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "R09-BETA-RESOURCE-ADMISSION",
+      "requirement": "测试准入只计算真实空闲与speculative页，不把inactive模型页当空闲。默认零交换；小模型显式允许最多32MiB静态历史交换时，仍须正常压力、两次无新换出、完整内存保留与64KiB音频mlock。资源不足不回收稳定模型、不改系统设置。",
+      "test": "beta-runtime/test_resource_admission.py",
+      "group": "runtime",
+      "historicalEvidence": "golden-and-omni-beta-20261105/mini-beta-audio-probe.log",
+      "requiresLiveEvidence": true
     }
   ],
   "reviewScope": {

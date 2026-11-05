@@ -10,7 +10,7 @@ export function independentRuntimeEnvironment(source, approved = false) {
  return env;
 }
 
-export function piRuntimeEnvironment(source, stateDirectory=join(homedir(),'Library/Application Support/Pi Agent Access/computer-use-state')) {
+export function piRuntimeEnvironment(source, stateDirectory=join(homedir(),source.PI_ACCESS_PROFILE==='beta'?'Library/Application Support/Pi Agent Access Beta/computer-use-state':'Library/Application Support/Pi Agent Access/computer-use-state')) {
  const env=independentRuntimeEnvironment(source,true);
  mkdirSync(stateDirectory,{recursive:true,mode:0o700});env.CODEX_HOME=stateDirectory;return env;
 }

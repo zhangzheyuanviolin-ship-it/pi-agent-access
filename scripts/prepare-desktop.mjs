@@ -1,6 +1,6 @@
-import { access, chmod, copyFile, cp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { access, chmod, copyFile, cp, mkdir, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { constants } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,9 @@ import { piPackageDirNames } from "./pi-packages.mjs";
 import { dedupeNestedPackages, externalPackageSpecifiers, findNestedPiScopePackages, stageCompletePackage, stageResolvedClosure } from "./stage-package.mjs";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
+// A traced symlink to a different worktree would make staging write its dependencies.
+const dependencyRoot=await realpath(join(rootDir,'node_modules'));
+if(!dependencyRoot.startsWith(rootDir+'/'))throw Error('Desktop build requires dependencies owned by this worktree');
 const desktopBuildDir = resolve(rootDir, process.env.PI_WEB_BUILD_DIR || ".next-desktop");
 const standaloneDir = join(desktopBuildDir, "standalone");
 // Stage a hotfix away from the running server; normal packaging keeps its path.
@@ -168,6 +171,10 @@ async function assembleServer() {
     join(rootDir, "desktop", "server-launcher.cjs"),
     join(serverResourcesDir, "desktop-server.cjs"),
   );
+  await copyFile(join(rootDir,"desktop/distribution-profile.cjs"),join(serverResourcesDir,"distribution-profile.cjs"));
+  await copyFile(join(rootDir,'desktop/beta-gateway.cjs'),join(serverResourcesDir,'beta-gateway.cjs'));
+  await cp(join(rootDir,'beta-runtime'),join(serverResourcesDir,'beta-runtime'),{recursive:true,filter:source=>!source.includes('__pycache__')});
+  await cp(join(rootDir,'local-omni'),join(serverResourcesDir,'local-omni'),{recursive:true,filter:source=>!source.includes('__pycache__')});
   await cp(join(rootDir, 'computer-use'), join(serverResourcesDir, 'access-distribution'), {recursive:true});
   await cp(join(rootDir, 'vendor/lcu'), join(serverResourcesDir, 'access-distribution/lcu'), {recursive:true,verbatimSymlinks:true});
   // Tauri cannot package an intentionally dangling link to an external app.
@@ -254,6 +261,12 @@ async function bundleNodeRuntime() {
       join(rootDir, "desktop", "server-helper-Info.plist"),
       join(contentsDir, "Info.plist"),
     );
+    if(process.env.PI_ACCESS_PROFILE==='beta'){
+      const plist=join(contentsDir,'Info.plist');
+      await writeFile(plist,(await readFile(plist,'utf8')).replace('com.zhangzheyuan.pi-agent.access</string>','com.zhangzheyuan.pi-agent.access.beta</string>').replace('<string>Pi Agent Access</string>','<string>Pi Agent Access 测试版</string>'));
+      const signed=spawnSync('/usr/bin/codesign',['--force','--sign','-','--identifier','com.zhangzheyuan.pi-agent.access.beta','--entitlements',join(rootDir,'src-tauri/Entitlements.beta.plist'),serverHelperDir],{encoding:'utf8'});
+      if(signed.status!==0)throw Error('Beta helper signing failed: '+signed.stderr);
+    }
   } else {
     const executableName = process.platform === "win32" ? "node.exe" : "node";
     binaryPath = join(nodeResourcesDir, executableName);

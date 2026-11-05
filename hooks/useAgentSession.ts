@@ -475,6 +475,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const sessionHookMountedRef = useRef(true);
   // In-flight session reads, keyed by session id (or force:<id> for fresh reads).
   const loadFlightsRef = useRef(new Map<string, Promise<unknown>>());
+  const failedSessionLoadRef = useRef<{sid:string;generation:number}|null>(null);
   // Latest settled view state, readable from the unmount cleanup without
   // re-subscribing it. Assigned every render like sessionPropIdRef below.
   const dataRef = useRef<SessionData | null>(null);
@@ -761,6 +762,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         shouldRetry: isCurrent,
       });
       if (res.status === 404) {
+        if (isCurrent()) failedSessionLoadRef.current = null;
         if (showLoading) {
           setData(null);
           setActiveLeafId(null);
@@ -776,6 +778,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const d = await res.json() as SessionData;
       if (!isCurrent()) return null;
+      failedSessionLoadRef.current = null;
       // Freshness check: when the disk snapshot is unchanged (same opaque
       // revision), keep any history the user already paged in instead of
       // collapsing back to the fresh 50-entry window. The state hooks then
@@ -891,7 +894,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         return null;
       }
     } catch (e) {
-      if (isCurrent()) setError(String(e));
+      if (isCurrent()) {
+        failedSessionLoadRef.current = {sid,generation:sessionGeneration};
+        setError(String(e));
+      }
       return "error";
     } finally {
       if (showLoading && !messagesLoaded && isCurrent()) setLoading(false);
@@ -903,6 +909,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
     return await flight;
   }, [chatWorkspace, seedStreamingSnapshot, setToolPresetState, syncLiveModel]);
+
+  useEffect(() => {
+    if (!error || !failedSessionLoadRef.current) return;
+    // Recover only failed history GETs. Never retry a submitted prompt/tool.
+    const timer = setInterval(() => {
+      const failed = failedSessionLoadRef.current;
+      if (document.visibilityState !== "visible" || !failed
+          || failed.sid !== sessionIdRef.current
+          || failed.generation !== sessionGenerationRef.current) return;
+      void loadSession(failed.sid, false, true); // existing single-flight guard
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [error, loadSession]);
 
   const loadContext = useCallback(async (sid: string, leafId: string | null, before?: string | null, options?: { tail?: number; signal?: AbortSignal }) => {
     const requestId = ++contextLoadIdRef.current;

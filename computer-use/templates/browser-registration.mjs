@@ -20,6 +20,7 @@ export function createBrowserRegistrationRecovery({lcuRoot,extensionDir,home=hom
    const record=JSON.parse(readFileSync(manifest,'utf8'));
    if(record.path===expected)return;
    if(!Array.isArray(record.allowed_origins)||!record.allowed_origins.some(x=>x==='chrome-extension://hehggadaopoacecdllhhajmbjkdcmajg/'))return '浏览器注册不属于已授权的官方扩展，未自动覆盖。';
+   if(process.env.PI_ACCESS_PROFILE==='beta')return '测试版浏览器连接与当前连接器不一致，未改动稳定版注册；请先在稳定版检查连接。';
    if(!pending)pending=install().finally(()=>{pending=undefined;});
    await pending;
    if(JSON.parse(readFileSync(manifest,'utf8')).path!==expected)throw Error('relay verification failed');
