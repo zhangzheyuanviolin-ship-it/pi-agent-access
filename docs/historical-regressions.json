@@ -392,7 +392,7 @@
     },
     {
       "id": "R08-BETA-ISOLATION",
-      "requirement": "测试版独立签名标识、固定网页端口、agent数据、推理端口、缓存与归属进程；拒绝稳定版地址和目录，禁止自动修改全局浏览器注册或卸载稳定模型。构建依赖必须属于候选工作树，不得通过符号链接写入稳定源码。 实时append/events/interrupt/stop可绕过加载准入以便清理，但仍须核对本轮Popen和进程组；未知同ID端口不得探测或转发控制。",
+      "requirement": "测试版独立签名标识、固定网页端口、agent数据、推理端口、缓存与归属进程；拒绝稳定版地址和目录，禁止自动修改全局浏览器注册或卸载稳定模型。构建依赖必须属于候选工作树，不得通过符号链接写入稳定源码。 实时append/events/interrupt/stop可绕过加载准入以便清理，但仍须核对本轮Popen和进程组；未知同ID端口不得探测或转发控制。 LCU适配器的工具surface磁盘记录与key使用Beta自有插件缓存，不写稳定版共用Library/Caches/lcu。",
       "test": "scripts/distribution-isolation.test.mjs + beta-runtime/test_beta_gateway.py",
       "group": "release",
       "historicalEvidence": "golden-and-omni-beta-20261105/beta-prepare-1.log",

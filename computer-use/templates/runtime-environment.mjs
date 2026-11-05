@@ -14,3 +14,9 @@ export function piRuntimeEnvironment(source, stateDirectory=join(homedir(),sourc
  const env=independentRuntimeEnvironment(source,true);
  mkdirSync(stateDirectory,{recursive:true,mode:0o700});env.CODEX_HOME=stateDirectory;return env;
 }
+
+export function piSurfaceCacheDirectory(source,ordinaryDirectory,extensionDirectory){
+ if(source.PI_ACCESS_PROFILE!=='beta')return ordinaryDirectory;
+ const directory=join(extensionDirectory,'surface-cache');
+ mkdirSync(directory,{recursive:true,mode:0o700});return directory;
+}

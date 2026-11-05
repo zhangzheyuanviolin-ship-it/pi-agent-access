@@ -16,7 +16,7 @@ type OriginalContent = { type: string; text?: string; data?: string; mimeType?: 
 
 import {piContent} from './result.mjs';
 import {automaticAccessDecision} from './access-policy.mjs';
-import {piRuntimeEnvironment} from './runtime-environment.mjs';
+import {piRuntimeEnvironment,piSurfaceCacheDirectory} from './runtime-environment.mjs';
 
 function commandFromEnvironment(selected?: string[]) {
   const raw = process.env.LCU_MCP_COMMAND;
@@ -191,8 +191,9 @@ function releaseIdentity(command: string[]) {
  * record costs one connect. Concurrent writers share one write through the record's lock, then write
  * themselves if that wait expires.
  */
+const adapterCacheDirectory=()=>piSurfaceCacheDirectory(process.env,cacheDirectory(),dirname(fileURLToPath(import.meta.url)));
 const surfaceRecord = {
-  path: () => join(cacheDirectory(), SURFACE_FILE),
+  path: () => join(adapterCacheDirectory(), SURFACE_FILE),
   wait: 1_000,
   lock: (path: string) => tryAcquire(path),
 };
@@ -213,7 +214,7 @@ export function surfaceKey(command: string[], allowedOrigins: string[], adapter:
   const environment = Object.fromEntries(SURFACE_ENVIRONMENT.map(name => [name, process.env[name] ?? null]));
   return createHash('sha256').update(JSON.stringify({
     format: SURFACE_FORMAT, adapter, command, allowedOrigins, environment,
-    platform: process.platform, arch: process.arch, cache: cacheDirectory(),
+    platform: process.platform, arch: process.arch, cache: adapterCacheDirectory(),
     files: files.map(fileStamp), installed,
   })).digest('hex');
 }

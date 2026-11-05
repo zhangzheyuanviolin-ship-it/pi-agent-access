@@ -16,3 +16,13 @@ test('pin receipt cannot select runtime outside the private root',()=>{
  const root=mkdtempSync(join(tmpdir(),'pi-cu-bad-pin-')),prior=process.env.PI_CODING_AGENT_DIR;
  try{mkdirSync(join(root,'computer-use-runtime'));writeFileSync(join(root,'computer-use-runtime/runtime-pin.json'),JSON.stringify({format:1,lcu:'/tmp/unrelated',node:'/bin/sh'}));const s=bootstrap.prepare({dataRoot:root,applicationPath:join(root,'missing.app')});assert.equal(s.available,false);}finally{if(prior===undefined)delete process.env.PI_CODING_AGENT_DIR;else process.env.PI_CODING_AGENT_DIR=prior;rmSync(root,{recursive:true,force:true})}
 });
+
+import{piSurfaceCacheDirectory}from'./templates/runtime-environment.mjs';
+test('beta CU surface records are private and never replace the stable cache',()=>{
+ const root=mkdtempSync(join(tmpdir(),'pi-cu-beta-cache-'));
+ try{
+  const ordinary=join(root,'stable'),extension=join(root,'beta/maintained-extensions/lcu');mkdirSync(ordinary,{recursive:true});mkdirSync(extension,{recursive:true});const stableRecord=join(ordinary,'pi-surfaces.json');writeFileSync(stableRecord,'stable surface');
+  const privateCache=piSurfaceCacheDirectory({PI_ACCESS_PROFILE:'beta'},ordinary,extension);writeFileSync(join(privateCache,'pi-surfaces.json'),'beta surface');
+  assert.equal(privateCache,join(extension,'surface-cache'));assert.equal(readFileSync(stableRecord,'utf8'),'stable surface');assert.equal(piSurfaceCacheDirectory({},ordinary,extension),ordinary);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
