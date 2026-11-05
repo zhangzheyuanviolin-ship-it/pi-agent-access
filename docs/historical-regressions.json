@@ -168,11 +168,12 @@
     },
     {
       "id": "C05",
-      "requirement": "首次AX完整、后续无损差量，不污染工具声明",
+      "requirement": "首次AX完整原文保留且可按需读取，自动回填允许明确标注的有限概览；后续差量不污染工具声明",
       "test": "computer-use/observation-diff.test.mjs",
       "group": "computer",
       "historicalEvidence": "Computer-Use-Design-Audit-20261104",
-      "requiresLiveEvidence": true
+      "requiresLiveEvidence": true,
+      "clarification": "2026-11-05用户明确要求首次浏览器回填缩减；完整信息保留要求不变，详见docs/browser-observation-transport.md"
     },
     {
       "id": "C06",
@@ -379,6 +380,14 @@
       "test": "computer-use/runtime-overlay.test.mjs",
       "group": "computer",
       "historicalEvidence": "S0-PREFIX-20261105/pinned-signature-before.log",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "C13",
+      "requirement": "首次浏览器页面先返回有限概览，完整原文与API可按需获取；保留安全说明、原AX编号、焦点、错误、图片和现有前缀，非浏览器返回不变",
+      "test": "computer-use/browser-observation.test.mjs",
+      "group": "computer",
+      "historicalEvidence": "browser-first-observation-20261105/original-call-analysis.private.json",
       "requiresLiveEvidence": true
     }
   ],

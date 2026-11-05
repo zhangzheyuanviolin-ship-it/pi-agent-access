@@ -1,0 +1,15 @@
+# Browser observation transport (2026-11-05)
+
+This narrowly scoped change affects only future successful browser page observations. It does not rebuild past messages, tool schemas, capability policy, memory, model loading, MCP registration, native-app output, networking or the installed signed apps.
+
+The reported27B Wikipedia call appended16979 new tokens with30979 cached tokens. The tool result contained separate browser guidance/API-reference and AX-tree blocks; their combined58391 text characters fell below the existing64000-character generic paging threshold. It was new observation content, not cache failure.
+
+The new browser-only transform runs before the existing observation-diff and generic paging layers. It saves each affected text block exactly in a content-addressed private file before reducing the automatic result. Failure to save returns the untouched original. Errors, images, readbacks, focus information and native app observations are preserved. All browser safety/discovery/lifecycle guidance preceding the official type reference remains verbatim. The type reference remains retrievable by reading the saved file or explicitly calling `cua.rewriteDocumentation()`; that explicit call is not reduced by this transform.
+
+A large AX tree returns a marked partial overview containing observed controls/headings and sampled text, with original IDs and no renumbering. This is not a complete page. Existing `Tab.inspect` supports bounded selector/query pagination; `getAXState({emit:false})` supports fresh targeted AX queries. The exact complete original is preserved. An overview cannot be treated as an unseen baseline for subsequent deltas. Page changes still require fresh observation; no action retries or weaker verification are introduced.
+
+The actual candidate27B run appended4666 new tokens after opening Wikipedia with8035 cached tokens, a72.5 percent reduction compared with the reported call. It located the real search field, inspected controls, handed off the tab, paged links across turns, explicitly recovered the full API documentation, and closed its own tab. Exact content depends on the live page; this is a measured example, not a universal token cap. Non-browser/native payloads remain unchanged and may still be large.
+
+Reference implementations reviewed: Playwright CLI returns snapshot file references and supports scoped/depth-limited snapshots plus bounded `find`; https://playwright.dev/agent-cli/snapshots and https://github.com/microsoft/playwright-cli. Existing CUA API uses emitted documentation/state plus explicit selective output from `getAXState({emit:false})`. The implementation retains this project's supported APIs and signed runtime, rather than replacing the browser driver.
+
+Release must include all existing historical checks plus C13, tested against the same candidate source and complete artifact. A passing isolated probe or replay alone does not permit activation. The paused omni work is excluded. VoiceOver startup diagnosis is separate and is not claimed fixed by this browser patch.
