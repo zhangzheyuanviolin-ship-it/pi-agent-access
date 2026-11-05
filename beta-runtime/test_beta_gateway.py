@@ -42,6 +42,10 @@ class Isolation(unittest.TestCase):
   with patch.object(beta,'stable_idle'),patch.object(beta.core,'owner_pid',return_value=99999),patch.object(beta.core.Manager,'ensure')as parent:
    with self.assertRaisesRegex(RuntimeError,'非本轮'):manager.ensure(self.model)
    parent.assert_not_called()
+ def test_live_loaded_probe_never_contacts_an_unknown_process(self):
+  manager=beta.BetaManager([self.model],Path('/unused'))
+  with patch.object(beta.core,'owner_pid',return_value=99999),patch.object(beta.core.Manager,'loaded')as parent:
+   self.assertFalse(manager.loaded(self.model));parent.assert_not_called()
  def test_spawn_and_reload_both_require_admission(self):
   # Exercise the real manager with a reachable unloaded fake Sushi backend.
   manager=beta.BetaManager([],Path('/unused'))

@@ -45,6 +45,16 @@ def admission(target):
  return check_resources(target.get('beta_minimum_available_bytes',48*1024**3),target.get('maximum_existing_swap_bytes',0))
 
 class BetaManager(core.Manager):
+ def loaded(self,target):
+  # Live append/events/interrupt/stop deliberately bypass load admission so
+  # cleanup stays possible while stable is busy. They must still prove that
+  # the listening backend is ours before status probes or control forwarding.
+  pid=core.owner_pid(target['port']);child=self.children.get(target['id'])
+  if pid is None or child is None or child.poll()is not None:return False
+  try:
+   if os.getpgid(pid)!=os.getpgid(child.pid)or os.getpgid(child.pid)!=child.pid:return False
+  except ProcessLookupError:return False
+  return super().loaded(target)
  def ensure(self,target):
   stable_idle()
   # A matching model ID on an occupied port does not prove ownership. Check
