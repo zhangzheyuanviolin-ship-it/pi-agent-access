@@ -453,6 +453,14 @@
       "group": "prefix",
       "historicalEvidence": "golden-and-omni-beta-20261105/qwen-instruct-template-diagnostic.json",
       "requiresLiveEvidence": true
+    },
+    {
+      "id": "P-BETA-CODEMODE-SPACED-PATH",
+      "requirement": "候选canonical macOS安装目录含空格和中文时，codemode文档地址仍须恢复旧长会话精确值。只允许匹配SDK末尾Read文档引用的地址，语义或其他文字变化不掩盖；真实候选包旧长会话最终HTTP工具集合/顺序/说明及全部旧messages逐字核对。",
+      "test": "lib/stable-request-tools.test.mjs + actual packaged old-long final HTTP capture",
+      "group": "prefix",
+      "historicalEvidence": "golden-and-omni-beta-20261105/beta-long-tool-diff-bound.private.json",
+      "requiresLiveEvidence": true
     }
   ],
   "reviewScope": {

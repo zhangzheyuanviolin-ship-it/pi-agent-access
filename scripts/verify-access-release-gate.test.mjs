@@ -44,3 +44,16 @@ test('beta gate binds actual native config, reviewed source, binary and librarie
   writeFileSync(binary,'old binary');assert.ok(validateBetaEngineBindings(g,{dataRoot:dir}).length);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test('withdrawn beta candidates cannot activate or become rollback baselines',async()=>{
+ const {validateBetaRevocation}=await import('./verify-access-release-gate.mjs');
+ const {mkdtempSync,mkdirSync,writeFileSync,rmSync}=await import('node:fs');const{tmpdir}=await import('node:os');const{join}=await import('node:path');const dataRoot=mkdtempSync(join(tmpdir(),'beta-revocation-'));
+ try{
+  mkdirSync(join(dataRoot,'private'));const file=join(dataRoot,'private/revoked-candidates.json');
+  writeFileSync(file,JSON.stringify({format:1,candidates:[{sourceDigest:'known-failure',activationAllowed:false,rollbackAllowed:false}]}));
+  assert.match(validateBetaRevocation({distributionProfile:'beta',sourceDigest:'known-failure'},{dataRoot}).join(),/revoked/);
+  assert.deepEqual(validateBetaRevocation({distributionProfile:'beta',sourceDigest:'new-candidate'},{dataRoot}),[]);
+  assert.deepEqual(validateBetaRevocation({distributionProfile:'stable',sourceDigest:'known-failure'},{dataRoot}),[]);
+  writeFileSync(file,'broken');assert.match(validateBetaRevocation({distributionProfile:'beta',sourceDigest:'new-candidate'},{dataRoot}).join(),/invalid/);
+ }finally{rmSync(dataRoot,{recursive:true,force:true});}
+});

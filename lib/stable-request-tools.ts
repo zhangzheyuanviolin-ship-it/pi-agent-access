@@ -4,7 +4,10 @@ const ENTRY='pi-web:request-tool-prefix-v1';
 type Tool={name?:string;description?:string;function?:{name?:string;description?:string}};
 type Row={type:string;customType?:string;data?:unknown;message?:{role?:string;toolsAdded?:{name:string;description?:string}[];toolsRemoved?:{name:string}[]}};
 type Baseline={version:1;epoch:string;order:string[];codemodeDescription?:string};
-const normalizeDocs=(s:string)=>s.replace(/\/[^\s`]+\/docs\/codemode\.md/g,'<CODEMODE_DOC>');
+// The canonical macOS bundle lives under "Application Support" and its app
+// name also contains spaces. Match the anchored SDK reference, not arbitrary
+// prose, so only the document address can change without changing semantics.
+const normalizeDocs=(s:string)=>s.replace(/(\bRead )\/[^\r\n`]+?\/docs\/codemode\.md(?= first\.$|$)/g,'$1<CODEMODE_DOC>');
 const nameOf=(t:Tool)=>t.function?.name??t.name??'';
 const sameNames=(a:readonly string[],b:readonly string[])=>a.length===b.length&&new Set(a).size===a.length&&a.every(n=>b.includes(n));
 /** Recover the first matching loadout in this explicit capability epoch, before runtime-path drift. */
