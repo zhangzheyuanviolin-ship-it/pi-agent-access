@@ -437,6 +437,22 @@
       "group": "prefix",
       "historicalEvidence": "golden-and-omni-beta-20261105/mini-voice-delivery-cache-before-fix.json",
       "requiresLiveEvidence": true
+    },
+    {
+      "id": "O03-DUPLEX-EARLY-RESOURCE-ADMISSION",
+      "requirement": "Mini双工管线启动前单独检查64GiB真实空闲余量，不以文件缓存估计代替；拒绝发生在关闭普通聊天KV或创建实时管线之前。加载后新增换出必须停止本轮测试进程，稳定服务不终止。",
+      "test": "local-omni/test_live.py",
+      "group": "runtime",
+      "historicalEvidence": "golden-and-omni-beta-20261105/beta-mini-live-report.json",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "O04-QWEN-INSTRUCT-PREFIX",
+      "requirement": "Qwen Omni Instruct使用官方plain assistant生成前缀，不插入空think标记，不靠删除内部标签伪装成功；历史assistant模板固定，文字/音频/视频及真实多轮缓存分别验收，未验证模型不开放。",
+      "test": "local-omni/test_qwen_prompt.py",
+      "group": "prefix",
+      "historicalEvidence": "golden-and-omni-beta-20261105/qwen-instruct-template-diagnostic.json",
+      "requiresLiveEvidence": true
     }
   ],
   "reviewScope": {

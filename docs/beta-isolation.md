@@ -60,3 +60,20 @@ the separate Applications entry can link to it; Rust canonicalizes beta resource
 before constructing Node/SDK/backend paths. Never copy to a new runtime path and
 repair recipes after testing, never overwrite an existing immutable release, and
 never treat candidate construction as installation authorization.
+
+Duplex has its own admission before closing a warm chat owner or creating the
+native pipeline: 64GiB genuinely free pages, as well as all ordinary pressure,
+swap and audio checks. A real candidate duplex initialization caused swap to
+grow from 7.12 to 21.75MiB and was stopped by post-load protection. Do not repeat
+that load alongside the resident stable large model. File-cache estimates do
+not satisfy this stricter reserve. This is a protected refusal, not live-call
+acceptance; actual camera/microphone, interruption and full model gates remain.
+
+Qwen Instruct uses the official plain assistant prefix. Passing
+enable_thinking=false injected empty think delimiters and caused first-token
+corruption. Real 4bit audio/text and three-turn KV reuse passed after omitting
+that switch; synthetic music was recognized without invented speech. Visual
+accuracy, visual cached suffix handling, speech output and final PIA integration
+are still unaccepted. Qwen stays disabled; raw diagnostic success is not a
+registered usable model. The downloaded pinned weights and original BF16 assets
+remain intact. No global MLX or Transformers package was modified.

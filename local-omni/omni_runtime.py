@@ -5,6 +5,7 @@ The caller owns media, history and session policy. Native events stay incrementa
 from pathlib import Path
 import json,time,threading,base64,hashlib
 import numpy as np
+from qwen_prompt import stable_template
 QWEN_OMNI_SYSTEM = ('You are Qwen, a virtual human developed by the Qwen Team, Alibaba Group, '
     'capable of perceiving auditory and visual inputs, as well as generating text and speech.')
 
@@ -42,7 +43,8 @@ class QwenOmniRuntime:
             if QWEN_OMNI_SYSTEM not in system:system=QWEN_OMNI_SYSTEM+'\n\n'+system
             turns[0]['content']=system
         else:turns.insert(0,{'role':'system','content':QWEN_OMNI_SYSTEM})
-        formatted=self.processor.apply_chat_template(turns,tools=tools or None,tokenize=False,add_generation_prompt=True,enable_thinking=False)
+        template=stable_template(self.processor.chat_template)
+        formatted=self.processor.apply_chat_template(turns,chat_template=template,tools=tools or None,tokenize=False,add_generation_prompt=True)
         self.model.language_model._rope_deltas=None
         self.model.language_model._position_ids=None
         inputs=prepare_inputs(self.processor,prompts=formatted,images=[str(x)for x in images]or None,audio=[str(x)for x in audio]or None,videos=[str(x)for x in video]or None,use_audio_in_video=interleaved)

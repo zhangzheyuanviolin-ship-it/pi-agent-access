@@ -7,6 +7,7 @@ import asyncio
 import base64
 import contextlib
 import json
+import os
 import uuid
 import tempfile
 import threading
@@ -35,6 +36,14 @@ class LiveSession:
 
     async def start(self):
         b = self.backend
+        if os.environ.get('PI_ACCESS_PROFILE')=='beta':
+            from resource_admission import check_resources
+            # Duplex allocates a different native pipeline from ordinary chat.
+            # Reject before closing its warm chat owner or allocating the model.
+            minimum=64*1024**3
+            admission=await asyncio.to_thread(check_resources,minimum,b.config.get('maximum_existing_swap_bytes',0))
+            if min(admission[k]['genuinely_free_bytes']for k in ('before','confirmed'))<minimum:
+                raise RuntimeError('双工通话需要独立的真实空闲内存余量，未创建实时管线；现有聊天缓存保留')
         if b.native_session:
             await asyncio.to_thread(b.native_session.close)
         if hasattr(b,'begin_native_resources'):await asyncio.to_thread(b.begin_native_resources)

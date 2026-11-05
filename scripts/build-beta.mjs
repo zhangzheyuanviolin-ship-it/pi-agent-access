@@ -1,6 +1,6 @@
 /** Build a candidate only. This receipt NEVER authorizes installation/activation. */
 import {spawnSync}from'node:child_process';
-import{readFileSync,writeFileSync,existsSync,mkdirSync,cpSync}from'node:fs';
+import{readFileSync,writeFileSync,existsSync,mkdirSync,cpSync,readdirSync}from'node:fs';
 import{resolve,join}from'node:path';
 import{homedir}from'node:os';
 import{fileURLToPath}from'node:url';
@@ -29,7 +29,8 @@ if(existsSync(app)){
 const server=join(app,'Contents/Resources/resources/server');
 const hashes={};
 const hash=p=>createHash('sha256').update(readFileSync(p)).digest('hex');
-for(const [src,dest]of[['desktop/server-launcher.cjs','desktop-server.cjs'],['desktop/distribution-profile.cjs','distribution-profile.cjs'],['desktop/beta-gateway.cjs','beta-gateway.cjs'],['beta-runtime/beta_gateway.py','beta-runtime/beta_gateway.py'],['beta-runtime/model_gateway.py','beta-runtime/model_gateway.py'],['beta-runtime/resource_admission.py','beta-runtime/resource_admission.py'],['local-omni/backend.py','local-omni/backend.py'],['local-omni/live.py','local-omni/live.py'],['local-omni/minicpm_session.py','local-omni/minicpm_session.py']]){
+const pythonSources=['beta-runtime','local-omni'].flatMap(dir=>readdirSync(join(root,dir)).filter(name=>name.endsWith('.py')).map(name=>[`${dir}/${name}`,`${dir}/${name}`]));
+for(const [src,dest]of[['desktop/server-launcher.cjs','desktop-server.cjs'],['desktop/distribution-profile.cjs','distribution-profile.cjs'],['desktop/beta-gateway.cjs','beta-gateway.cjs'],...pythonSources]){
  const expected=hash(join(root,src));if(hash(join(server,dest))!==expected)throw Error('Packaged source drift: '+src);hashes[dest]=expected;
 }
 run('/usr/bin/codesign',['--verify','--deep','--strict',app]);

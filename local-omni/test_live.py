@@ -1,7 +1,12 @@
 import asyncio,base64,unittest,threading
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'beta-runtime'))
 from concurrent.futures import ThreadPoolExecutor
 import numpy as np
-from live import QwenLiveSession
+from live import QwenLiveSession,LiveSession
+from unittest.mock import Mock,patch
+from types import SimpleNamespace
 class Runtime:
  def __init__(self):self.requests=[];self.thread_ids=[]
  def speech_events(self,prompt,**kwargs):
@@ -27,4 +32,17 @@ class QwenLiveTest(unittest.IsolatedAsyncioTestCase):
   with self.assertRaises(ValueError):await s.append({'audio':'!!!!'})
   with self.assertRaises(ValueError):await s.append({'audio':base64.b64encode(np.ones(16000,dtype='<f4').tobytes()).decode(),'frame':base64.b64encode(b'not an image').decode()})
   self.assertEqual(b.runtime.requests,[]);await s.stop();b.executor.shutdown()
+class DuplexAdmissionTest(unittest.IsolatedAsyncioTestCase):
+ async def test_duplex_refuses_before_closing_chat_or_connecting(self):
+  backend=SimpleNamespace(native_session=SimpleNamespace(close=Mock()),config={})
+  session=LiveSession(backend)
+  with patch.dict('os.environ',{'PI_ACCESS_PROFILE':'beta'}),patch('resource_admission.check_resources',side_effect=RuntimeError('low memory')),patch('live.ClientSession')as connect:
+   with self.assertRaisesRegex(RuntimeError,'low memory'):await session.start()
+   connect.assert_not_called();backend.native_session.close.assert_not_called()
+ async def test_file_cache_estimate_does_not_satisfy_duplex_free_reserve(self):
+  backend=SimpleNamespace(native_session=SimpleNamespace(close=Mock()),config={})
+  session=LiveSession(backend);reading={'before':{'genuinely_free_bytes':40*1024**3},'confirmed':{'genuinely_free_bytes':40*1024**3}}
+  with patch.dict('os.environ',{'PI_ACCESS_PROFILE':'beta'}),patch('resource_admission.check_resources',return_value=reading)as check,patch('live.ClientSession')as connect:
+   with self.assertRaisesRegex(RuntimeError,'真实空闲'):await session.start()
+   check.assert_called_once_with(64*1024**3,0);connect.assert_not_called();backend.native_session.close.assert_not_called()
 if __name__=='__main__':unittest.main(verbosity=2)
