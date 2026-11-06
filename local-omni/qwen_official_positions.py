@@ -21,8 +21,11 @@ def install(model,model_path):
     def tensor(v,dtype=torch.long):
         return None if v is None else torch.as_tensor(np.asarray(v).copy(),dtype=dtype,device='cpu')
     def wrapped(self,*args,**kwargs):
-        result=original(*args,**kwargs)
         ids=kwargs.get('input_ids',args[0]if args else None)
+        if ids is not None:
+            from qwen_cached_suffix import embedding_kwargs
+            kwargs=embedding_kwargs(ids,kwargs)
+        result=original(*args,**kwargs)
         if ids is None:return result
         image_grid=kwargs.get('image_grid_thw');video_grid=kwargs.get('video_grid_thw');features=kwargs.get('input_features');audio_lengths=None
         if features is None or (image_grid is None and video_grid is None):return result
@@ -43,4 +46,4 @@ def install(model,model_path):
         if image_grid is None and video_grid is None:pos=pos[0]
         return replace(result,position_ids=mx.array(pos.numpy(),dtype=mx.int32),rope_deltas=mx.array(delta.numpy(),dtype=mx.int32))
     model.thinker.get_input_embeddings=MethodType(wrapped,model.thinker)
-    return {'reference':'transformers Qwen3OmniMoePreTrainedModelForConditionalGeneration.get_rope_index','reference_file':str(Path(__import__('inspect').getfile(Official))),'torch_device':'cpu','weights_and_decode':'MLX BF16','no_prompt_mutation':True}
+    return {'reference':'transformers Qwen3OmniMoePreTrainedModelForConditionalGeneration.get_rope_index','reference_file':str(Path(__import__('inspect').getfile(Official))),'torch_device':'cpu','weights_and_decode':'MLX checkpoint dtype','no_prompt_mutation':True}

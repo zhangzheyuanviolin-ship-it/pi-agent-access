@@ -24,4 +24,11 @@ class Admission(unittest.TestCase):
   with self.assertRaises(RuntimeError):r.check_resources(1,33*1024**2)
  def test_too_much_existing_swap_refuses(self):
   with self.assertRaisesRegex(RuntimeError,'交换'):self.run_case(self.sample(swap_bytes=33*1024**2),self.sample(swap_bytes=33*1024**2))
+ def test_large_reserve_is_not_reduced_by_residual_swap_allowance(self):
+  for available in [95*1024**3,96*1024**3]:
+   reading=self.sample(available_bytes=available,swap_bytes=14*1024**2)
+   with patch.object(r,'snapshot',side_effect=[reading,reading]),patch.object(r.time,'sleep'),patch.object(r,'lock_audio'):
+    if available<96*1024**3:
+     with self.assertRaisesRegex(RuntimeError,'不足'):r.check_resources(96*1024**3,32*1024**2)
+    else:r.check_resources(96*1024**3,32*1024**2)
 if __name__=='__main__':unittest.main()

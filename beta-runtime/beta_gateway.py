@@ -68,8 +68,30 @@ class BetaManager(core.Manager):
    try:owned=os.getpgid(pid)==os.getpgid(child.pid)==child.pid
    except ProcessLookupError:owned=False
    if not owned:raise RuntimeError('测试服务进程归属不符，未转发或卸载模型')
-  return super().ensure(target)
- def _before_load(self,target):admission(target)
+  self.load_admission=None
+  result=super().ensure(target)
+  if self.load_admission is not None:
+   from resource_admission import check_resources
+   try:
+    after=check_resources(8*1024**3,target.get('maximum_existing_swap_bytes',0))
+    before=self.load_admission['confirmed']
+    if after['confirmed']['swapouts']!=before['swapouts']or after['confirmed']['swap_bytes']>before['swap_bytes']:
+     raise RuntimeError('测试模型加载产生新增交换内存；未转发用户请求')
+   except Exception:
+    self._release_rejected_load(target)
+    raise
+  return result
+ def _before_load(self,target):self.load_admission=admission(target)
+ def _release_rejected_load(self,target):
+  # No inference has been forwarded by ensure. Still prove child identity and
+  # idleness before stopping the isolated process group; never adopt a PID.
+  child=self.children.get(target['id']);pid=core.owner_pid(target['port'])
+  if child is None or child.poll()is not None or pid is None:return False
+  if os.getpgid(pid)!=child.pid or os.getpgid(child.pid)!=child.pid:return False
+  if core.other_backend_busy(target):return False
+  os.killpg(child.pid,signal.SIGTERM);child.wait(timeout=60)
+  self.children.pop(target['id'],None)
+  return True
 
 class BetaHandler(core.Handler):
  def do_GET(self):

@@ -77,3 +77,28 @@ accuracy, visual cached suffix handling, speech output and final PIA integration
 are still unaccepted. Qwen stays disabled; raw diagnostic success is not a
 registered usable model. The downloaded pinned weights and original BF16 assets
 remain intact. No global MLX or Transformers package was modified.
+
+2026-11-06 candidate update (supersedes the earlier partial status above):
+Mini's real SDK read/result/cache and tools-off requests passed. Qwen is the
+pinned four-bit checkpoint, not a BF16 alias. Video cached suffix and native
+speech KV have separate regression cases. Native speech retains function-call
+special-token delimiters and stops before Talker for a function request; a real
+tool result precedes spoken answers. Actual package acceptance remains required.
+A source diagnostic asking only for video colors produced a wrong temporal
+order; preserve this model-understanding failure, not just the successful
+color-and-shape question. No universal visual-accuracy claim is made.
+
+Residual-swap policy review: all four large Sushi engines were loaded and
+actually inferred/tool-called/restored from SSD with 13.75–21.75MiB historical
+swap, normal pressure, successful audio mlock, and zero new Swapouts. The
+DeepSeek test preserved >8GiB available after its ~108GB allocation. An absolute
+zero-swap requirement in beta would therefore reject a genuinely idle healthy
+host until reboot, even when >110GB is available. Explicit beta recipes may now
+use the same bounded 32MiB residual allowance for every model; default for an
+unspecified recipe remains zero. Full 96/52GiB per-model reserves are retained,
+no active swap or increasing usage is admitted, and the gateway now rechecks
+8GiB/pressure/audio/swap growth after a NEW load, before forwarding inference.
+A rejected load is released only when it is our owned idle child group. Stable
+admission, OS limits and the native engine's own preflight are unchanged. This
+is a documented policy change based on measured resource behavior, not a claim
+that new swapping is acceptable. Duplex still requires 64GiB genuinely free.

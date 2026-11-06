@@ -1,7 +1,7 @@
 """Pure request normalization: no model imports, network, or filesystem reads."""
 import base64, json, re, uuid
 
-MODELS = {'minicpm': 'MiniCPM-o-4.5-F16', 'qwen': 'Qwen3-Omni-30B-A3B-Instruct-BF16'}
+MODELS = {'minicpm': 'MiniCPM-o-4.5-F16', 'qwen': 'Qwen3-Omni-30B-A3B-Instruct-4bit'}
 
 def tool_calls(text, tools):
     allowed = {t['function']['name'] for t in tools or [] if t.get('type') == 'function'}

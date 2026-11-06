@@ -24,6 +24,9 @@ def beta_catalog(source,root):
    if key in env:env[key]=str(storage/suffix)
   env['PYTHONDONTWRITEBYTECODE']='1'
   m['beta_minimum_available_bytes']=RESERVES[old]*1024**3
+  # Historical residual swap alone is not active memory pressure. Keep the full
+  # model reserve, two unchanged swap samples and a post-load growth check.
+  m['maximum_existing_swap_bytes']=32*1024**2
   # oMLX's cwd carries mutable default state. All weights already have explicit paths.
   if m['engine']=='omlx':m['cwd']=str(storage)
  return result

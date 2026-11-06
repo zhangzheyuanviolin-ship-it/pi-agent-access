@@ -67,5 +67,32 @@ class QwenPromptTest(unittest.TestCase):
             rest=list(events)
         self.assertEqual([e['type']for e in rest],['done'])
 
+    def test_native_speech_tool_delimiters_survive_and_never_enter_talker(self):
+        from omni_runtime import QwenOmniRuntime
+        r=QwenOmniRuntime.__new__(QwenOmniRuntime)
+        r.lock=threading.Lock();r.speech_media=None;r.speech_cache=object()
+        r.speech_usage={'prompt_tokens':20};r._prepare=lambda *a:('',{})
+        reached=[];closed=[]
+        def generate(**kw):
+            try:
+                yield 'text',[100,101,151645]
+                reached.append('talker')
+                yield 'audio',None
+            finally:closed.append(True)
+        def decode(tokens,skip_special_tokens):
+            self.assertEqual(tokens,[100,101])
+            self.assertFalse(skip_special_tokens)
+            return '<tool_call>{"name":"read","arguments":{"path":"fixture"}}</tool_call>'
+        r.model=types.SimpleNamespace(generate_stream=generate)
+        r.processor=types.SimpleNamespace(tokenizer=types.SimpleNamespace(
+            eos_token_id=151645,decode=decode))
+        core=types.SimpleNamespace(random=types.SimpleNamespace(seed=lambda s:None))
+        with patch.dict('sys.modules',{'mlx':types.SimpleNamespace(core=core),'mlx.core':core}):
+            events=list(r.speech_events('read it',tools=[{'type':'function',
+                'function':{'name':'read'}}]))
+        self.assertEqual([e['type'] for e in events],['text','done'])
+        self.assertIn('<tool_call>',events[0]['text'])
+        self.assertEqual(reached,[]);self.assertEqual(closed,[True])
+
 
 if __name__=='__main__':unittest.main(verbosity=2)

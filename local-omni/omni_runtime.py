@@ -20,6 +20,13 @@ class QwenOmniRuntime:
         from mlx_vlm.generate import PromptCacheState
         self.prompt_cache=PromptCacheState()
         self.media_signature=None
+        self.speech_cache=None
+        self.speech_media=None
+        self.speech_usage={}
+        from types import MethodType
+        from qwen_speech_cache import cached_thinker
+        self.model._pia_speech_owner=self
+        self.model._generate_thinker_with_hidden_states=MethodType(cached_thinker,self.model)
     def _prepare(self,prompt,images=None,audio=None,video=None,messages=None,tools=None):
         from mlx_vlm.utils import prepare_inputs
         content=[];images=images or [];audio=audio or [];video=video or []
@@ -80,15 +87,45 @@ class QwenOmniRuntime:
                 yield {'type':'done','elapsed':time.monotonic()-start,'preprocess_seconds':prepared,'usage':usage}
             finally:
                 if not completed:self.prompt_cache=PromptCacheState()
-    def speech_events(self,prompt,images=None,audio=None,video=None,max_text_tokens=80,max_audio_tokens=384,seed=1234,cancel=None,messages=None):
+    def speech_events(self,prompt,images=None,audio=None,video=None,max_text_tokens=80,max_audio_tokens=384,seed=1234,cancel=None,messages=None,tools=None):
         import mlx.core as mx
         with self.lock:
-            start=time.monotonic();_,inputs=self._prepare(prompt,images,audio,video,messages);mx.random.seed(seed)
-            for kind,value in self.model.generate_stream(**inputs,thinker_max_new_tokens=max_text_tokens,talker_max_new_tokens=max_audio_tokens,thinker_temperature=.6,thinker_top_p=.95,thinker_top_k=20,chunk_size=75):
-                if cancel is not None and cancel.is_set():yield {'type':'cancelled'};return
-                if kind=='text':yield {'type':'text','text':self.processor.tokenizer.decode(value,skip_special_tokens=True),'elapsed':time.monotonic()-start}
-                else:yield {'type':'audio','pcm':np.asarray(value).reshape(-1).copy(),'sample_rate':24000,'elapsed':time.monotonic()-start}
-            yield {'type':'done','elapsed':time.monotonic()-start}
+            media=[]
+            for paths in (images,audio,video):
+                media.append([self._media_identity([p],None,None) for p in paths or []])
+            self.speech_media_compatible=self.speech_media is not None and all(
+                new[:len(old)]==old for old,new in zip(self.speech_media,media))
+            self.speech_cancel=cancel
+            start=time.monotonic();_,inputs=self._prepare(prompt,images,audio,video,messages,tools);mx.random.seed(seed)
+            completed=False
+            generator=self.model.generate_stream(**inputs,thinker_max_new_tokens=max_text_tokens,talker_max_new_tokens=max_audio_tokens,thinker_temperature=.6,thinker_top_p=.95,thinker_top_k=20,chunk_size=75)
+            try:
+                for kind,value in generator:
+                    if cancel is not None and cancel.is_set():yield {'type':'cancelled'};return
+                    if kind=='text':
+                        # tool_call delimiters are tokenizer special tokens too.
+                        # Keep them for the protocol parser; remove only EOS.
+                        tokens=value
+                        if tools:
+                            eos=self.processor.tokenizer.eos_token_id
+                            endings=set(eos if isinstance(eos,list) else [eos])
+                            tokens=[token for token in value if token not in endings]
+                        text=self.processor.tokenizer.decode(tokens,skip_special_tokens=not bool(tools))
+                        yield {'type':'text','text':text,'elapsed':time.monotonic()-start}
+                        if tools:
+                            from protocol import tool_calls
+                            _,calls=tool_calls(text,tools)
+                            if calls:
+                                completed=True;self.speech_media=media
+                                yield {'type':'done','elapsed':time.monotonic()-start,'usage':self.speech_usage}
+                                return
+                    else:yield {'type':'audio','pcm':np.asarray(value).reshape(-1).copy(),'sample_rate':24000,'elapsed':time.monotonic()-start}
+                completed=True
+                self.speech_media=media
+                yield {'type':'done','elapsed':time.monotonic()-start,'usage':self.speech_usage}
+            finally:
+                generator.close()
+                if not completed:self.speech_cache=None
 
 class MiniCPMOmniClient:
     def __init__(self,port=12352):

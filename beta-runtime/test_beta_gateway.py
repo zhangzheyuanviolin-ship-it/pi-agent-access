@@ -1,7 +1,7 @@
 """Fail-closed isolation checks; no model load or stable service mutation."""
 import copy,json,tempfile,unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch,Mock
 import beta_gateway as beta
 
 class Isolation(unittest.TestCase):
@@ -52,5 +52,18 @@ class Isolation(unittest.TestCase):
   with patch.object(beta,'stable_idle'),patch.object(manager,'loaded',return_value=False),patch.object(beta,'admission',side_effect=RuntimeError('reserve')),patch.object(beta.core,'api')as api:
    with self.assertRaisesRegex(RuntimeError,'reserve'):manager.ensure(self.model)
    api.assert_not_called()
+ def test_new_swap_after_load_prevents_forwarding_and_releases_only_owned_load(self):
+  manager=beta.BetaManager([],Path('/unused'))
+  def load(target):manager.load_admission={'confirmed':{'swapouts':3,'swap_bytes':14}}
+  with patch.object(beta,'stable_idle'),patch.object(beta.core.Manager,'ensure',side_effect=load),patch('resource_admission.check_resources',return_value={'confirmed':{'swapouts':4,'swap_bytes':14}}),patch.object(manager,'_release_rejected_load')as cleanup:
+   with self.assertRaisesRegex(RuntimeError,'新增交换'):manager.ensure(self.model)
+   cleanup.assert_called_once_with(self.model)
+ def test_rejected_load_cleanup_never_kills_unknown_or_busy_process(self):
+  manager=beta.BetaManager([],Path('/unused'));child=Mock(pid=900);child.poll.return_value=None
+  with patch.object(beta.core,'owner_pid',return_value=900),patch.object(beta.os,'getpgid',return_value=900),patch.object(beta.os,'killpg')as kill:
+   self.assertFalse(manager._release_rejected_load(self.model));kill.assert_not_called()
+   manager.children[self.model['id']]=child
+   with patch.object(beta.core,'other_backend_busy',return_value=True):
+    self.assertFalse(manager._release_rejected_load(self.model));kill.assert_not_called()
 
 if __name__=='__main__':unittest.main()

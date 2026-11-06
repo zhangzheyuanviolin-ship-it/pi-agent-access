@@ -184,11 +184,11 @@ class Backend:
             else:
                 messages, images, audios, videos = self.normalize(body['messages'], tmp)
             if self.engine == 'qwen' and speech:
-                # Speech is a separate native speech task; no fabricated call result.
-                if body.get('tools'): raise ValueError('Qwen native speech currently requires tools off')
+                # Native function requests stop before Talker synthesis; only the
+                # answer after the real tool result is eligible for speech.
                 text = body['messages'][0]['content']
                 if isinstance(text, list): text = '\n'.join(b.get('text','') for b in text if b.get('type') == 'text')
-                for e in self.runtime.speech_events(text, images=images, audio=audios, video=videos, max_text_tokens=n, cancel=cancel,messages=messages):
+                for e in self.runtime.speech_events(text, images=images, audio=audios, video=videos, max_text_tokens=n, cancel=cancel,messages=messages,tools=body.get('tools')):
                     if e['type'] == 'audio':
                         import numpy as np
                         yield {'type':'audio','audio':base64.b64encode(np.asarray(e['pcm'],dtype='<f4').tobytes()).decode(),'sample_rate':24000}

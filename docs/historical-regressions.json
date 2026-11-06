@@ -461,6 +461,38 @@
       "group": "prefix",
       "historicalEvidence": "golden-and-omni-beta-20261105/beta-long-tool-diff-bound.private.json",
       "requiresLiveEvidence": true
+    },
+    {
+      "id": "O-QWEN-CACHED-VISUAL-SUFFIX",
+      "requirement": "Qwen相同视频/图像续聊保留真实KV；full mask/grid不在裁切文本suffix上重新计算，缺完整位置明确拒绝",
+      "test": "local-omni/test_qwen_cached_suffix.py",
+      "group": "prefix",
+      "historicalEvidence": "omni-sushi15-20261106/qwen-video-cache-before.json",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "O-QWEN-SPEECH-CACHE",
+      "requirement": "原生语音生成保留同媒体和固定提示前缀KV及Talker hidden；续轮真实cache统计，取消或媒体改变不可误用缓存",
+      "test": "scripts/live-omni-cache-acceptance.py",
+      "group": "prefix",
+      "historicalEvidence": "omni-sushi15-20261106/qwen-speech-cache-proof.json",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "O-QWEN-SPEECH-TOOL-DELIMITERS",
+      "requirement": "语音工具调用保留tool_call特殊token，真实SDK工具执行后才合成最终回答，不朗读工具JSON；用户关闭工具后HTTP无tools声明",
+      "test": "local-omni/test_qwen_prompt.py + scripts/live-omni-tools-acceptance.mjs OMNI_TEST_SPEECH=1",
+      "group": "prefix",
+      "historicalEvidence": "omni-sushi15-20261106/pi-qwen-tools-speech-failure1.json",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "R-BETA-POSTLOAD-SWAP",
+      "requirement": "静态残余swap显式预算不降低大模型完整准入reserve，新增Swapouts/usage或压力异常在新模型加载后拒绝并只释放自有空闲child，绝不接管未知PID",
+      "test": "beta-runtime/test_beta_gateway.py + beta-runtime/test_resource_admission.py",
+      "group": "resource",
+      "historicalEvidence": "omni-sushi15-20261106/sushi15-pia-deepseek-results.json",
+      "requiresLiveEvidence": true
     }
   ],
   "reviewScope": {
