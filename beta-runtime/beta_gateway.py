@@ -68,6 +68,7 @@ class BetaManager(core.Manager):
    try:owned=os.getpgid(pid)==os.getpgid(child.pid)==child.pid
    except ProcessLookupError:owned=False
    if not owned:raise RuntimeError('测试服务进程归属不符，未转发或卸载模型')
+  self.retiring=[m for m in self.catalog if m['id']!=target['id']and m['id']in self.children and self.children[m['id']].poll()is None]
   self.load_admission=None
   result=super().ensure(target)
   if self.load_admission is not None:
@@ -81,7 +82,22 @@ class BetaManager(core.Manager):
     self._release_rejected_load(target)
     raise
   return result
- def _before_load(self,target):self.load_admission=admission(target)
+ def _before_load(self,target):
+  # A caffeinate/taskpolicy parent can exit before its owned inference child.
+  # The core manager already sent one SIGTERM to that group. Wait for the
+  # original model ports to close; never replay termination or adopt a process.
+  retiring=getattr(self,'retiring',[]);deadline=time.monotonic()+10
+  while any(not core.port_closed(m['port'])for m in retiring):
+   if time.monotonic()>=deadline:raise RuntimeError('上一测试模型仍在释放资源，未启动第二个模型')
+   stable_idle();time.sleep(.1)
+  from resource_admission import MemoryReserveError
+  while True:
+   try:self.load_admission=admission(target);return
+   except MemoryReserveError:
+    # Only a just-retired OWNED backend gets a bounded deallocation wait. A
+    # busy stable task, pressure, new swap or failed audio lock refuses at once.
+    if not retiring or time.monotonic()>=deadline:raise
+    time.sleep(.1)
  def _release_rejected_load(self,target):
   # No inference has been forwarded by ensure. Still prove child identity and
   # idleness before stopping the isolated process group; never adopt a PID.

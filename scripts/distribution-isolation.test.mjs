@@ -13,4 +13,5 @@ test('beta omni rejects stable gateway, including an explicit copied setting',as
 });
 test('beta native recipe and admission regressions execute in the full suite',async()=>{
  const{spawnSync}=await import('node:child_process');const r=spawnSync('/usr/bin/python3',['-B','-m','unittest','discover','-s','beta-runtime','-p','test_*.py'],{cwd:new URL('..',import.meta.url),encoding:'utf8',timeout:15000});assert.equal(r.status,0,r.stdout+r.stderr);
+ const profile=spawnSync('/usr/bin/python3',['-B','scripts/test_beta_profile.py'],{cwd:new URL('..',import.meta.url),encoding:'utf8',timeout:15000});assert.equal(profile.status,0,profile.stdout+profile.stderr);
 });

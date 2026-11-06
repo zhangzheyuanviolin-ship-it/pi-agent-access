@@ -6,6 +6,9 @@ Anonymous inactive model/KV pages are not added to the available estimate.
 """
 import ctypes,re,subprocess,time
 
+class MemoryReserveError(RuntimeError):
+ """A proven resource shortage, distinct from pressure/swap/ownership failure."""
+
 def snapshot():
  vm=subprocess.check_output(['/usr/bin/vm_stat'],text=True,timeout=3)
  page=int(re.search(r'page size of (\d+)',vm)[1]);counts={k:int(v)for k,v in re.findall(r'([^\n:]+):\s+(\d+)\.',vm)}
@@ -39,6 +42,6 @@ def check_resources(minimum_available_bytes,maximum_existing_swap_bytes=0):
  if last['swapouts']!=first['swapouts'] or last['swap_bytes']>first['swap_bytes']:
   raise RuntimeError('系统正在换出内存，未启动测试推理')
  if max(first['swap_bytes'],last['swap_bytes'])>maximum_existing_swap_bytes:raise RuntimeError('现有交换内存超过测试模型预算，未启动测试推理')
- if min(first['available_bytes'],last['available_bytes'])<minimum_available_bytes:raise RuntimeError('可用内存估计不足，未启动测试模型；没有卸载稳定版模型')
+ if min(first['available_bytes'],last['available_bytes'])<minimum_available_bytes:raise MemoryReserveError('可用内存估计不足，未启动测试模型；没有卸载稳定版模型')
  lock_audio()
  return {'before':first,'confirmed':last,'minimum_available_bytes':minimum_available_bytes,'maximum_existing_swap_bytes':maximum_existing_swap_bytes}

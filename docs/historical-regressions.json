@@ -501,6 +501,22 @@
       "group": "resource",
       "historicalEvidence": "omni-sushi15-20261106/switch-resource-timeline.jsonl",
       "requiresLiveEvidence": true
+    },
+    {
+      "id": "R-BETA-EXPERT-RESIDENT-BUDGET",
+      "requirement": "128GB Beta新建配置不继承DeepSeek108GiB激进专家驻留目标；采用官方96GiB默认以保留系统余量，KV8GB/128GB及1M上下文保持；真实load/tool/cache无新增swap",
+      "test": "scripts/test_beta_profile.py",
+      "group": "resource",
+      "historicalEvidence": "omni-sushi15-20261106/switch-resource-timeline.jsonl.resident100-failure",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "R-BETA-OWNED-RELEASE",
+      "requirement": "自有caffeinate/taskpolicy父进程先退出时，等待已终止模型监听端口关闭及物理资源释放后再准入下个模型；不重发终止，不等待未知进程，不放宽压力/swap/音频或reserve",
+      "test": "beta-runtime/test_beta_gateway.py",
+      "group": "resource",
+      "historicalEvidence": "omni-sushi15-20261106/live-model-4-entries.private.json",
+      "requiresLiveEvidence": true
     }
   ],
   "reviewScope": {

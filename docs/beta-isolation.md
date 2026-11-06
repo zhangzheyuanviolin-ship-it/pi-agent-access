@@ -127,3 +127,20 @@ Primary sources:
 https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/host.c
 https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/vm_statistics.h
 https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/vm/vm_page.h
+
+A second measured switch issue is separate from file-cache accounting. The
+caffeinate/taskpolicy parent can exit before its inference listener and GPU
+allocations are released. The beta now waits up to10 seconds only after a known
+owned model has already been terminated once. It waits for its former port to
+close, then permits only MemoryReserveError to settle within the same budget;
+stable work, pressure, swap growth and audio failures reject immediately. No
+second termination, new model load or inference request is retried by this wait.
+
+At108GiB, DeepSeek's strict post-load check caught four new swapout pages; at100
+it caught36. Both failures remain in Q2, and neither was accepted. The documented
+128GB default96GiB resident target passed the full MLTF→DeepSeek native
+write/read/bash and cache sequence with Swapouts1944 unchanged, pressure1 and
+successful mlock. Only the beta expert-resident target changes; context1M,
+prefix-cache RAM8GB/SSD128GB, actual weights and stable108GiB recipe remain.
+New profile construction caps this beta target at96 to prevent reintroduction.
+All nine backends must be accepted against the final bound candidate again.

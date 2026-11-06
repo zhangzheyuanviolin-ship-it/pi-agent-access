@@ -10,6 +10,7 @@ class Isolation(unittest.TestCase):
   self.root=Path(self.temp.name);self.root_patch=patch.object(beta,'ROOT',self.root);self.root_patch.start();self.addCleanup(self.root_patch.stop)
   self.model={'id':'fixture','engine':'sushi','port':12445,'args':['/read-only/engine','--host','127.0.0.1','--port','12445','--log-file',str(self.root/'engine.log')],'environment':{'SUSHI_PREFIX_CACHE_DIR':str(self.root/'cache')}}
  def test_accept_own_paths(self):beta.validate_catalog([self.model])
+
  def test_deny_shared_gateway_and_stable_port(self):
   for port in [12345,12349,12449,38471]:
    m=copy.deepcopy(self.model);m['port']=port
@@ -65,5 +66,25 @@ class Isolation(unittest.TestCase):
    manager.children[self.model['id']]=child
    with patch.object(beta.core,'other_backend_busy',return_value=True):
     self.assertFalse(manager._release_rejected_load(self.model));kill.assert_not_called()
+ def test_retiring_listener_closes_before_next_admission_without_repeat_kill(self):
+  manager=beta.BetaManager([],Path('/unused'));manager.retiring=[{'port':12448}]
+  with patch.object(beta.core,'port_closed',side_effect=[False,True]),patch.object(beta,'stable_idle'),patch.object(beta.time,'sleep'),patch.object(beta.os,'killpg')as kill,patch.object(beta,'admission',return_value={'verified':True})as admit:
+   manager._before_load(self.model)
+   kill.assert_not_called();admit.assert_called_once_with(self.model)
+   self.assertEqual(manager.load_admission,{'verified':True})
+ def test_only_recent_owned_deallocation_gets_a_short_memory_wait(self):
+  from resource_admission import MemoryReserveError
+  manager=beta.BetaManager([],Path('/unused'));manager.retiring=[{'port':12448}]
+  with patch.object(beta.core,'port_closed',return_value=True),patch.object(beta.time,'sleep'),patch.object(beta,'admission',side_effect=[MemoryReserveError('pending release'),{'verified':True}])as admit:
+   manager._before_load(self.model);self.assertEqual(admit.call_count,2)
+  manager.retiring=[]
+  with patch.object(beta,'admission',side_effect=MemoryReserveError('real shortage'))as admit:
+   with self.assertRaises(MemoryReserveError):manager._before_load(self.model)
+   self.assertEqual(admit.call_count,1)
+ def test_swap_or_pressure_never_enters_the_deallocation_wait(self):
+  manager=beta.BetaManager([],Path('/unused'));manager.retiring=[{'port':12448}]
+  with patch.object(beta.core,'port_closed',return_value=True),patch.object(beta,'admission',side_effect=RuntimeError('new swap'))as admit:
+   with self.assertRaisesRegex(RuntimeError,'new swap'):manager._before_load(self.model)
+   self.assertEqual(admit.call_count,1)
 
 if __name__=='__main__':unittest.main()
