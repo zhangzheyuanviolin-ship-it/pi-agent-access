@@ -1,7 +1,7 @@
 """Conservative physical-memory admission for the independent beta only.
 Residual swap is allowed only by an explicit small per-model budget, with normal
 kernel pressure, no observed anonymous swapout growth, sufficient genuinely free
-pages plus a bounded clean-file-cache estimate, and a successful audio mlock.
+pages plus pageable file-backed pages, and a successful audio mlock.
 Anonymous inactive model/KV pages are not added to the available estimate.
 """
 import ctypes,re,subprocess,time
@@ -14,8 +14,13 @@ def snapshot():
  if not match:raise RuntimeError('无法核实交换内存，未启动测试推理')
  pressure=int(subprocess.check_output(['/usr/sbin/sysctl','-n','kern.memorystatus_vm_pressure_level'],text=True,timeout=3))
  genuine=page*(counts['Pages free']+counts['Pages speculative'])
- file_cache=page*min(counts['Pages inactive'],counts['File-backed pages'])
+ # XNU external_page_count counts pageable file-backed (non-swap) pages.
+ # These may be active after a model exits. Capping them at ALL inactive pages
+ # falsely rejected DeepSeek with no models alive and ~108GB of file cache.
+ # Never add anonymous inactive pages or wired GPU allocations as reclaimable.
+ file_cache=page*counts['File-backed pages']
  return {'available_bytes':genuine+file_cache,'genuinely_free_bytes':genuine,'reclaimable_file_cache_estimate_bytes':file_cache,
+         'inactive_file_cache_lower_estimate_bytes':page*min(counts['Pages inactive'],counts['File-backed pages']),
          'swap_bytes':float(match[1])*{'K':1024,'M':1024**2,'G':1024**3}[match[2]],
          'pageouts':counts['Pageouts'],'swapouts':counts['Swapouts'],'pressure':pressure}
 

@@ -40,10 +40,10 @@ class LiveSession:
             from resource_admission import check_resources
             # Duplex allocates a different native pipeline from ordinary chat.
             # Reject before closing its warm chat owner or allocating the model.
+            # Pageable file cache is reclaimable even while on XNU's active
+            # queue. Anonymous model/KV memory and wired pages are excluded.
             minimum=64*1024**3
             admission=await asyncio.to_thread(check_resources,minimum,b.config.get('maximum_existing_swap_bytes',0))
-            if min(admission[k]['genuinely_free_bytes']for k in ('before','confirmed'))<minimum:
-                raise RuntimeError('双工通话需要独立的真实空闲内存余量，未创建实时管线；现有聊天缓存保留')
         if b.native_session:
             await asyncio.to_thread(b.native_session.close)
         if hasattr(b,'begin_native_resources'):await asyncio.to_thread(b.begin_native_resources)

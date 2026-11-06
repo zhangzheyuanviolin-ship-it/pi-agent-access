@@ -39,10 +39,10 @@ class DuplexAdmissionTest(unittest.IsolatedAsyncioTestCase):
   with patch.dict('os.environ',{'PI_ACCESS_PROFILE':'beta'}),patch('resource_admission.check_resources',side_effect=RuntimeError('low memory')),patch('live.ClientSession')as connect:
    with self.assertRaisesRegex(RuntimeError,'low memory'):await session.start()
    connect.assert_not_called();backend.native_session.close.assert_not_called()
- async def test_file_cache_estimate_does_not_satisfy_duplex_free_reserve(self):
+ async def test_duplex_retains_64gib_reserve_before_closing_chat(self):
   backend=SimpleNamespace(native_session=SimpleNamespace(close=Mock()),config={})
-  session=LiveSession(backend);reading={'before':{'genuinely_free_bytes':40*1024**3},'confirmed':{'genuinely_free_bytes':40*1024**3}}
-  with patch.dict('os.environ',{'PI_ACCESS_PROFILE':'beta'}),patch('resource_admission.check_resources',return_value=reading)as check,patch('live.ClientSession')as connect:
-   with self.assertRaisesRegex(RuntimeError,'真实空闲'):await session.start()
+  session=LiveSession(backend)
+  with patch.dict('os.environ',{'PI_ACCESS_PROFILE':'beta'}),patch('resource_admission.check_resources',side_effect=RuntimeError('available below64GiB'))as check,patch('live.ClientSession')as connect:
+   with self.assertRaisesRegex(RuntimeError,'below64GiB'):await session.start()
    check.assert_called_once_with(64*1024**3,0);connect.assert_not_called();backend.native_session.close.assert_not_called()
 if __name__=='__main__':unittest.main(verbosity=2)

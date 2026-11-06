@@ -493,6 +493,14 @@
       "group": "resource",
       "historicalEvidence": "omni-sushi15-20261106/sushi15-pia-deepseek-results.json",
       "requiresLiveEvidence": true
+    },
+    {
+      "id": "R-BETA-ACTIVE-FILECACHE",
+      "requirement": "模型退出后仍在active队列的可分页文件页不被漏算；不将匿名inactive或wired GPU计为可回收；完整reserve/压力/audio/新swap检查保持，真实MLTF→DeepSeek切换和双工验证",
+      "test": "beta-runtime/test_resource_admission.py + local-omni/test_live.py",
+      "group": "resource",
+      "historicalEvidence": "omni-sushi15-20261106/switch-resource-timeline.jsonl",
+      "requiresLiveEvidence": true
     }
   ],
   "reviewScope": {

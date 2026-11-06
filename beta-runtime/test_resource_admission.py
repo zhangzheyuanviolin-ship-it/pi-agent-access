@@ -10,6 +10,10 @@ class Admission(unittest.TestCase):
   vm='Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 10.\nPages speculative: 3.\nPages inactive: 100.\nFile-backed pages: 5.\nPageouts: 0.\nSwapouts: 0.\n'
   with patch.object(r.subprocess,'check_output',side_effect=[vm,'vm.swapusage: used = 0.00M','1']):
    value=r.snapshot();self.assertEqual(value['genuinely_free_bytes'],13*16384);self.assertEqual(value['reclaimable_file_cache_estimate_bytes'],5*16384);self.assertEqual(value['available_bytes'],18*16384)
+ def test_active_pageable_file_cache_after_unload_is_not_missing_memory(self):
+  vm='Mach Virtual Memory Statistics: (page size of 16384 bytes)\nPages free: 10.\nPages speculative: 3.\nPages inactive: 5.\nFile-backed pages: 100.\nPageouts: 0.\nSwapouts: 0.\n'
+  with patch.object(r.subprocess,'check_output',side_effect=[vm,'vm.swapusage: used = 0.00M','1']):
+   value=r.snapshot();self.assertEqual(value['reclaimable_file_cache_estimate_bytes'],100*16384);self.assertEqual(value['inactive_file_cache_lower_estimate_bytes'],5*16384);self.assertEqual(value['available_bytes'],113*16384)
  def test_small_static_swap_requires_all_guards(self):self.run_case(self.sample(),self.sample())
  def test_default_retains_zero_swap_policy(self):
   with self.assertRaisesRegex(RuntimeError,'交换'):self.run_case(self.sample(),self.sample(),0)

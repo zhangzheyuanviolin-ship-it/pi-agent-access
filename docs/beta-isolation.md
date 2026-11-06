@@ -102,3 +102,28 @@ A rejected load is released only when it is our owned idle child group. Stable
 admission, OS limits and the native engine's own preflight are unchanged. This
 is a documented policy change based on measured resource behavior, not a claim
 that new swapping is acceptable. Duplex still requires 64GiB genuinely free.
+
+2026-11-06 active file-cache correction (supersedes the inactive cap and
+64GiB genuinely-free-only wording above): the exact build8 switch test rejected
+DeepSeek twice without ever spawning it, even with no other model alive. The
+resource timeline and vm_stat show ~108GB file-backed pages, ~60GB inactive,
+~16GB free/speculative, only ~7GB anonymous and ~4GB wired. The old
+min(inactive,file_backed) allowance omitted ~48GB of pageable file cache. This
+is an accounting error, not an occupied GPU or demonstrated release delay.
+XNU host.c exports external_page_count from vm_page_pageable_external_count;
+vm_statistics.h defines it as file-backed non-swap. Queue activity does not
+make a pageable file page anonymous or wired. Use free/speculative plus this
+file-backed estimate, recording the previous inactive-only lower estimate
+separately. Never add all anonymous inactive pages. Kernel pressure, bounded
+static swap, two unchanged samples, full 96/52GiB model reserves, engine native
+preflight, post-load8GiB/audio/no-new-swap guards remain. Duplex retains its full
+64GiB preallocation headroom based on the corrected estimate, instead of
+requiring cached file data to have disappeared from RAM before allocation.
+This fixes false refusal without purging files/caches, reallocating dummy memory,
+changing OS limits or waiting for an arbitrary aging interval. The negative
+64GiB test and anonymous-page exclusion tests are retained. New actual-package
+model-switch, duplex and resource acceptance are required before activation.
+Primary sources:
+https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/kern/host.c
+https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/mach/vm_statistics.h
+https://github.com/apple-oss-distributions/xnu/blob/main/osfmk/vm/vm_page.h
