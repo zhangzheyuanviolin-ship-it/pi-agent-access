@@ -144,3 +144,18 @@ successful mlock. Only the beta expert-resident target changes; context1M,
 prefix-cache RAM8GB/SSD128GB, actual weights and stable108GiB recipe remain.
 New profile construction caps this beta target at96 to prevent reintroduction.
 All nine backends must be accepted against the final bound candidate again.
+
+USER CORRECTION: verified108GiB baseline is mandatory (2026-11-06).
+The earlier96GiB deployment recommendation above is WITHDRAWN. It was based on
+short candidate tests without first reviewing the user's November1 acceptance.
+That report explicitly verified108GiB/125000MB/DSpark and actual1,000,000 input
+for both code and prose, with50 formal samples and263 curve requests; it states
+there was no automatic downgrade to96. Small global swap deltas during a later
+load do not by themselves establish that108 is unsafe or that96 is equivalent.
+The stable recipe never changed. Beta's recipe has now been restored to108 and
+its profile constructor no longer caps residency. Build10 is revoked; its nine
+short-model passes at96 do not approve the108 baseline or permit activation.
+Preserve the failures, examine new-engine allocation and the new protection's
+attribution separately, and keep the validated stable engine if the upgrade
+cannot preserve this configuration. Do not automatically lower residency,
+context, KV capacity, DSpark, vision or model quality to make a gate pass.

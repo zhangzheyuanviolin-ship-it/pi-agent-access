@@ -19,11 +19,6 @@ def beta_catalog(source,root):
   args[args.index('--port')+1]=str(m['port'])
   for flag,suffix in MUTABLE_FLAGS.items():
    if flag in args:args[args.index(flag)+1]=str(storage/suffix)
-  # The 128GB beta reserves system/audio headroom rather than inheriting the
-  # stable expert-residency tuning. This changes neither KV capacity nor context.
-  if m['id'].startswith('DeepSeek-V4.1-')and '--ssd-budget-gb'in args:
-   i=args.index('--ssd-budget-gb')+1
-   args[i]=str(min(int(args[i]),96))
   env=m.setdefault('environment',{})
   for key,suffix in [('SUSHI_PREFIX_CACHE_DIR','cache'),('MLTF_DATA_ROOT','state')]:
    if key in env:env[key]=str(storage/suffix)

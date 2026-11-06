@@ -504,10 +504,10 @@
     },
     {
       "id": "R-BETA-EXPERT-RESIDENT-BUDGET",
-      "requirement": "128GB Beta新建配置不继承DeepSeek108GiB激进专家驻留目标；采用官方96GiB默认以保留系统余量，KV8GB/128GB及1M上下文保持；真实load/tool/cache无新增swap",
+      "requirement": "新Beta配置必须逐项保留黄金DeepSeek108GiB专家驻留预算、8GB/128GB前缀缓存和1048576窗口；不得用96GiB短测试代替既有108GiB真实百万验收，也不得为通过新保护自动降预算",
       "test": "scripts/test_beta_profile.py",
       "group": "resource",
-      "historicalEvidence": "omni-sushi15-20261106/switch-resource-timeline.jsonl.resident100-failure",
+      "historicalEvidence": "omni-sushi15-20261106/user108-baseline-correction.json",
       "requiresLiveEvidence": true
     },
     {
@@ -516,6 +516,14 @@
       "test": "beta-runtime/test_beta_gateway.py",
       "group": "resource",
       "historicalEvidence": "omni-sushi15-20261106/live-model-4-entries.private.json",
+      "requiresLiveEvidence": true
+    },
+    {
+      "id": "R-PRESERVE-VERIFIED-CONFIG",
+      "requirement": "升级引擎或加新保护前完整核对既有百万验收配置和指标；全系统少量swap增量不能未经归因就判定黄金108GiB配置不安全；不能以降低既有能力/性能条件解决候选验收失败",
+      "test": "scripts/test_beta_profile.py + actual108GiB engine/load/cache acceptance",
+      "group": "resource",
+      "historicalEvidence": "DeepSeek-V4.1-Diagnostic-Round2-20261031-222655/results/measurement-verification.json",
       "requiresLiveEvidence": true
     }
   ],

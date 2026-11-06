@@ -296,3 +296,15 @@ Before every stable package/publication, run scripts/verify-access-release-gate.
 
 ## Frozen stable and isolated beta (user requirement, 2026-11-05)
 The user accepted stable c33df5f and runtime digest591a76fc3bfe1b6fff72f06e6f06fb89f33067f87e24da84c2bac614f9be9c98 as the golden baseline. All omni development belongs to the testing worktree and a separately installed Pi Agent Access 测试版 (bundle/signing identifier ending .beta). Never install over or restart stable, write its profile/memory/history/extensions, change its endpoint/tunnel/native host registration, or use its gateway to evict user models. Beta must use distinct app data, WebKit origin/port, model gateway, owned model processes and inference caches. Existing model weights and the verified sealed computer runtime may be read-only dependencies. Resource shortage rejects beta, never aborts stable work. Full historical gates remain mandatory; stable promotion additionally requires the user's manual acceptance. Golden rollback also requires current gates. Do not publish Python bytecode or unverified WIP as a deployment baseline.
+
+## Preserve measured model configurations (user correction, 2026-11-06)
+DeepSeek4.1's golden configuration is108GiB resident budget,1048576 context
+capacity for actual1,000,000 input plus output, native DSpark, GPU limit125000MB,
+and the existing8GB RAM/128GB SSD prefix-cache settings. The original November1
+report under LocalAI/DeepSeek-V4.1-Diagnostic-Round2-20261031-222655 and its
+measurement-verification.json are mandatory context before inference-engine or
+resource-admission changes. Do not silently lower108 to96/100, even in beta,
+and do not substitute short tests for the verified million-token configuration.
+A newly added guard or small system-wide swap delta requires diagnosis; it is
+not proof that the established baseline must be downgraded. Preserve known
+capabilities/performance conditions; block the candidate/upgrade if necessary.

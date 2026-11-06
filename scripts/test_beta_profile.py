@@ -3,7 +3,7 @@ from pathlib import Path
 class ProfileRegression(unittest.TestCase):
  def setUp(self):
   temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup);self.root=Path(temp.name)
- def test_new_profile_does_not_reintroduce_aggressive_deepseek_residency(self):
+ def test_new_profile_preserves_million_token_verified_deepseek_budget(self):
   path=Path(__file__).resolve().parent/'setup-beta-profile.py'
   # Packaged runtimes do not include the developer-only setup script; the source
   # suite exercises this constructor before staging the resulting private recipe.
@@ -14,6 +14,6 @@ class ProfileRegression(unittest.TestCase):
    'args':['sushi','--port','12350','--ssd-budget-gb','108','--prefix-cache-mem','8GB','--prefix-cache-disk','128GB','--ctx-size','1048576']}
   result=module.beta_catalog([original],self.root)[0]
   self.assertEqual(original['args'][4],'108')
-  self.assertEqual(result['args'][4],'96')
+  self.assertEqual(result['args'][4],'108')
   self.assertEqual(result['args'][5:],original['args'][5:])
 if __name__=='__main__':unittest.main()
